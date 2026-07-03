@@ -2,6 +2,8 @@
 
 Sequence (executed only if Mayne gate passes):
   Researcher → Sentiment → Bull R1 → Bear R1 → Bull R2 → Bear R2 → Treasury → Manager
+
+Every agent call is logged to the database with full prompt/response/latency.
 """
 from __future__ import annotations
 
@@ -17,7 +19,11 @@ from ..agents.bear import BearAgent
 from ..agents.treasury import TreasuryAgent
 from ..agents.manager import ManagerAgent
 from ..core.signal_packet import SignalPacket
-from ..database import log_agent_call
+from ..database import (
+    insert_placeholder_trade,
+    log_agent_call,
+    update_trade,
+)
 
 
 log = logging.getLogger("tidoquant")
@@ -41,11 +47,19 @@ class Pipeline:
         ]
 
     def run(self, packet: SignalPacket) -> SignalPacket:
-        """Run all agents sequentially. If any agent fails, the pipeline
-        continues (agent_error is recorded on the packet). Manager still
-        decides with the data available."""
+        """Run all agents sequentially. All agent calls are logged to the
+        database with full prompt/response/latency. Creates a placeholder
+        trade before the pipeline so agent_logs have a valid trade_id.
+        After pipeline: if GO the trade is updated with full data and
+        status='open'; otherwise status='rejected'."""
         started = time.monotonic()
-        trade_id = -1  # assigned later if manager says GO
+
+        # Create placeholder trade so all agent calls are logged against it
+        trade_id = insert_placeholder_trade(
+            packet.symbol, packet.direction, packet.entry_price,
+        )
+        packet.trade_id = trade_id
+        log.info("pipeline placeholder trade id=%d for %s", trade_id, packet.symbol)
 
         for agent in self.agents:
             elapsed = time.monotonic() - started
@@ -58,17 +72,23 @@ class Pipeline:
                 break
 
             try:
-                packet = agent.run(packet)
+                packet = agent.run(packet, trade_id=trade_id)
             except Exception as exc:
                 log.error("pipeline: %s crashed: %s", agent.name, exc)
                 packet.agent_errors.append(f"{agent.name}_crash: {exc}")
 
+        # Update placeholder trade with final pipeline output
+        update_trade(trade_id, packet)
+
         log.info(
-            "pipeline complete for %s: manager=%s conf=%d errors=%d",
+            "pipeline complete for %s: manager=%s conf=%d errors=%d "
+            "trade_id=%d status=%s",
             packet.symbol,
             packet.manager_decision,
             packet.manager_confidence or 0,
             len(packet.agent_errors),
+            trade_id,
+            packet.manager_decision or 'rejected',
         )
         return packet
 

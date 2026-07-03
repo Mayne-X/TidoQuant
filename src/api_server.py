@@ -9,7 +9,17 @@ import json
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Any
 
-from .database import dashboard_summary, equity_history, get_closed_trades, get_open_trades
+from .database import (
+    cycle_logs,
+    dashboard_detail,
+    dashboard_summary,
+    daily_pnl,
+    equity_history,
+    get_closed_trades,
+    get_open_trades,
+    pipeline_detail,
+    trades_by_symbol,
+)
 
 
 class APIHandler(BaseHTTPRequestHandler):
@@ -18,22 +28,35 @@ class APIHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Cache-Control", "no-cache")
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
     def do_GET(self):
-        if self.path == "/api/summary":
+        path = self.path
+        # Allow /api prefix or bare paths for compatibility
+        if path == "/api/summary" or path == "/summary":
             self._json(dashboard_summary())
-        elif self.path == "/api/equity":
+        elif path == "/api/detail" or path == "/detail":
+            self._json(dashboard_detail())
+        elif path == "/api/equity" or path == "/equity":
             self._json(equity_history(200))
-        elif self.path == "/api/trades/open":
+        elif path == "/api/trades/open" or path == "/trades/open":
             self._json(get_open_trades())
-        elif self.path == "/api/trades/closed":
+        elif path == "/api/trades/closed" or path == "/trades/closed":
             self._json(get_closed_trades(100))
-        elif self.path == "/api/health":
-            self._json({"status": "ok"})
+        elif path == "/api/trades/by_symbol" or path == "/trades/by_symbol":
+            self._json(trades_by_symbol())
+        elif path == "/api/pnl/daily" or path == "/pnl/daily":
+            self._json(daily_pnl(30))
+        elif path == "/api/cycles" or path == "/cycles":
+            self._json(cycle_logs(20))
+        elif path == "/api/pipeline" or path == "/pipeline":
+            self._json(pipeline_detail(20))
+        elif path == "/api/health" or path == "/health":
+            self._json({"status": "ok", "agent_pipeline": "active"})
         else:
-            self._json({"error": "not found"}, 404)
+            self._json({"error": "not found", "path": path}, 404)
 
     def log_message(self, fmt, *args):
         pass

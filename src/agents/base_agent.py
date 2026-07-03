@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 from ..core.signal_packet import SignalPacket
+from ..database import log_agent_call
 from .ollama_client import OllamaClient
 
 
@@ -50,13 +51,14 @@ class BaseAgent(ABC):
             "current_price": packet.current_price,
         }
 
-    def run(self, packet: SignalPacket) -> SignalPacket:
+    def run(self, packet: SignalPacket, trade_id: int = -1) -> SignalPacket:
         """Execute the agent: build prompts → call Ollama → parse → enrich packet.
         If Ollama fails, logs error, sets agent_error on packet, and returns
-        packet unchanged."""
+        packet unchanged. Logs every call to database when trade_id > 0."""
         t0 = time.perf_counter()
         system = self.system_prompt()
         user = self.user_prompt(packet)
+        full_prompt = f"## System\n{system}\n\n## User\n{user}"
 
         try:
             result = self.ollama.chat(system=system, user=user)
@@ -66,10 +68,20 @@ class BaseAgent(ABC):
                 self.name, elapsed, result.get("score", "N/A"),
             )
             packet = self.enrich(packet, result)
+            if trade_id > 0:
+                log_agent_call(
+                    trade_id, self.name, full_prompt,
+                    json.dumps(result, indent=2), elapsed,
+                )
         except Exception as exc:
             elapsed = int((time.perf_counter() - t0) * 1000)
             log.warning("%s agent failed after %dms: %s", self.name, elapsed, exc)
             packet.agent_errors.append(f"{self.name}: {exc}")
+            if trade_id > 0:
+                log_agent_call(
+                    trade_id, self.name, full_prompt,
+                    f"ERROR: {exc}", elapsed, error=str(exc),
+                )
 
         return packet
 

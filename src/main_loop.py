@@ -7,13 +7,11 @@ import time
 
 from .agents.ollama_client import OllamaClient, OllamaConnectionError
 from .binance_client import safe_client
-from .config import PAIRS, SCAN_INTERVAL_SECONDS
+from .config import PAIRS, SCAN_INTERVAL_SECONDS, STARTING_EQUITY, TIMEFRAMES
 from .core.pipeline import Pipeline
 from .core.signal_packet import SignalPacket
 from .database import (
     dashboard_summary,
-    get_open_trades,
-    insert_trade,
     migrate,
     snapshot_equity,
 )
@@ -23,25 +21,33 @@ from .paper_engine import PaperEngine
 log = logging.getLogger("tidoquant")
 
 
+def _fetch_tf_candles(client, symbol):
+    """Fetch all 3 HTF candle sets + sweep + entry in parallel-ish."""
+    tf_candles = {}
+    for tf_label, _weight, limit in TIMEFRAMES:
+        tf_candles[tf_label] = client.klines(symbol, tf_label, limit=limit)
+    sweep = client.klines(symbol, "15m", limit=144)    # ~36h of 15m
+    entry = client.klines(symbol, "5m", limit=144)     # ~12h of 5m
+    return tf_candles, sweep, entry
+
+
 def run_loop():
     migrate()
     client = safe_client()
     engine = PaperEngine()
 
-    # Try Ollama — if it's down, run in Mayne-only fallback mode
     ollama = OllamaClient()
+    pipeline = None
     try:
-        if not ollama.health():
-            log.warning("Ollama not reachable — running in Mayne-only mode")
-            pipeline = None
-        else:
+        if ollama.health():
             pipeline = Pipeline(ollama)
             log.info("Ollama connected — multi-agent pipeline active")
+        else:
+            log.warning("Ollama not reachable — Mayne-only mode")
     except OllamaConnectionError:
         log.warning("Ollama connection failed — Mayne-only mode")
-        pipeline = None
 
-    log.info("TidoQuant v2 starting...")
+    log.info("TidoQuant v2 starting (multi-timeframe: 1h/4h/12h)...")
 
     while True:
         if not engine.is_trading_allowed():
@@ -49,22 +55,19 @@ def run_loop():
         else:
             for symbol in PAIRS:
                 try:
-                    htf = client.klines(symbol, "4h", limit=100)
-                    ltf = client.klines(symbol, "15m", limit=100)
-                    entry = client.klines(symbol, "5m", limit=100)
-                    if not entry:
+                    tf_candles, sweep_candles, entry_candles = _fetch_tf_candles(client, symbol)
+                    if not entry_candles:
                         continue
 
-                    price = entry[-1].close
+                    price = entry_candles[-1].close
                     mark_info = client.mark_price(symbol)
                     fund_info = client.funding_rate(symbol)
 
-                    # 1. GATEKEEPER — Mayne must pass
-                    mayne = score_mayne(htf, ltf, entry, "long")
+                    # 1. GATEKEEPER — Mayne on multi-timeframe
+                    mayne = score_mayne(tf_candles, sweep_candles, entry_candles, "long")
 
                     if not mayne.passed_gate:
-                        # Also check short direction
-                        mayne_short = score_mayne(htf, ltf, entry, "short")
+                        mayne_short = score_mayne(tf_candles, sweep_candles, entry_candles, "short")
                         if mayne_short.passed_gate:
                             mayne = mayne_short
                         else:
@@ -82,9 +85,9 @@ def run_loop():
                         mayne=mayne,
                         entry_price=price,
                         current_price=price,
-                        htf_candles=htf,
-                        ltf_candles=ltf,
-                        entry_candles=entry,
+                        tf_candles=tf_candles,
+                        sweep_candles=sweep_candles,
+                        entry_candles=entry_candles,
                         funding_rate=mark_info.get("rate", 0.0),
                         mark_price=mark_info.get("mark", price),
                         open_interest=client.open_interest_history(symbol),
@@ -95,7 +98,6 @@ def run_loop():
                     if pipeline is not None:
                         packet = pipeline.run(packet)
                     else:
-                        # Mayne-only fallback: basic sizing
                         packet.manager_decision = "GO"
                         packet.manager_confidence = mayne.score
                         packet.manager_reasoning = (
@@ -104,12 +106,11 @@ def run_loop():
                         packet.stop_loss = price * 0.98
                         packet.take_profit = price * 1.04
                         packet.leverage = 2
-                        packet.position_size_usd = 100 * 0.01 * 2
+                        packet.position_size_usd = STARTING_EQUITY * 0.01 * 2
 
                     # 4. Execute if manager approves
                     if packet.manager_decision == "GO":
-                        trade_id = insert_trade(packet)
-                        engine.open_position(packet, trade_id)
+                        engine.open_position(packet, packet.trade_id)
                         log.info(
                             "%s: TRADE OPENED id=%d direction=%s size=$%.2f "
                             "SL=%.2f TP=%.2f (manager conf=%d)",

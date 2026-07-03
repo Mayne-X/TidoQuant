@@ -76,6 +76,43 @@ def migrate():
 
 # ── Trades ──────────────────────────────────────────────────
 
+def insert_placeholder_trade(symbol: str, direction: str, entry_price: float) -> int:
+    """Create a placeholder trade before pipeline runs so agents can log against it.
+    Returns the trade_id. Call update_trade() after pipeline completes."""
+    with _db() as db:
+        cur = db.execute(
+            """INSERT INTO trades
+               (symbol, direction, entry_price, status)
+               VALUES (?,?,?,'analyzing')""",
+            (symbol, direction, entry_price),
+        )
+        return cur.lastrowid
+
+
+def update_trade(trade_id: int, packet) -> None:
+    """Update a placeholder trade with full pipeline output.
+    Status: 'open' if GO, 'rejected' if NO-GO/None."""
+    decision = packet.manager_decision
+    status = 'open' if decision == 'GO' else 'rejected'
+    with _db() as db:
+        db.execute(
+            """UPDATE trades SET
+               sl=?, tp=?, position_size=?, leverage=?,
+               mayne_score=?, manager_decision=?,
+               manager_confidence=?, debate_transcript=?,
+               status=?
+               WHERE id=?""",
+            (
+                packet.stop_loss, packet.take_profit,
+                packet.position_size_usd, packet.leverage,
+                packet.mayne.score, packet.manager_decision,
+                packet.manager_confidence, packet.debate_transcript(),
+                status,
+                trade_id,
+            ),
+        )
+
+
 def insert_trade(packet) -> int:
     """Open a new trade. Returns the trade id."""
     with _db() as db:
@@ -158,7 +195,8 @@ def latest_equity() -> float:
         row = db.execute(
             "SELECT equity FROM equity_snapshots ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        return float(row["equity"]) if row else 100.0
+        from .config import STARTING_EQUITY
+        return float(row["equity"]) if row else STARTING_EQUITY
 
 
 def equity_history(limit: int = 500) -> List[dict]:
@@ -184,10 +222,142 @@ def dashboard_summary() -> dict:
                 COALESCE(SUM(pnl),0) as total_pnl
             FROM trades WHERE status='closed'
         """).fetchone()
+        from .config import STARTING_EQUITY
         return {
-            "equity": float(eq["equity"]) if eq else 100.0,
+            "equity": float(eq["equity"]) if eq else STARTING_EQUITY,
             "total_trades": stats["total"],
             "wins": stats["wins"],
             "losses": stats["losses"],
             "total_pnl": round(stats["total_pnl"], 2),
         }
+
+
+def dashboard_detail() -> dict:
+    """Richer stats for charts."""
+    with _db() as db:
+        eq = db.execute("SELECT equity FROM equity_snapshots ORDER BY id DESC LIMIT 1").fetchone()
+        stats = db.execute("""
+            SELECT
+                COUNT(*) as total,
+                COALESCE(SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END),0) as wins,
+                COALESCE(SUM(CASE WHEN pnl<0 THEN 1 ELSE 0 END),0) as losses,
+                COALESCE(AVG(CASE WHEN pnl>0 THEN pnl END),0) as avg_win,
+                COALESCE(AVG(CASE WHEN pnl<0 THEN pnl END),0) as avg_loss,
+                COALESCE(MAX(pnl),0) as best_trade,
+                COALESCE(MIN(pnl),0) as worst_trade,
+                COALESCE(SUM(CASE WHEN pnl>0 THEN pnl END),0) as gross_profit,
+                COALESCE(ABS(SUM(CASE WHEN pnl<0 THEN pnl END)),0) as gross_loss
+            FROM trades WHERE status='closed'
+        """).fetchone()
+        # Find max drawdown from equity snapshots
+        from .config import STARTING_EQUITY
+        rows = db.execute(
+            "SELECT equity FROM equity_snapshots ORDER BY id ASC"
+        ).fetchall()
+        peak = STARTING_EQUITY
+        max_dd = 0.0
+        for r in rows:
+            v = float(r["equity"])
+            if v > peak: peak = v
+            dd = (peak - v) / peak * 100
+            if dd > max_dd: max_dd = dd
+        return {
+            "equity": float(eq["equity"]) if eq else STARTING_EQUITY,
+            "total_trades": stats["total"],
+            "total_pnl": round(stats["gross_profit"] - stats["gross_loss"], 2),
+            "wins": stats["wins"],
+            "losses": stats["losses"],
+            "avg_win": round(stats["avg_win"], 2),
+            "avg_loss": round(stats["avg_loss"], 2),
+            "best_trade": round(stats["best_trade"], 2),
+            "worst_trade": round(stats["worst_trade"], 2),
+            "win_rate": round(stats["wins"] / max(1, stats["total"]) * 100, 1),
+            "profit_factor": round(
+                stats["gross_profit"] / max(0.01, stats["gross_loss"]), 2
+            ),
+            "max_drawdown_pct": round(max_dd, 2),
+        }
+
+
+def trades_by_symbol() -> List[dict]:
+    with _db() as db:
+        rows = db.execute("""
+            SELECT symbol,
+                   COUNT(*) as count,
+                   SUM(CASE WHEN pnl>0 THEN 1 ELSE 0 END) as wins,
+                   SUM(CASE WHEN pnl<0 THEN 1 ELSE 0 END) as losses,
+                   COALESCE(SUM(pnl),0) as total_pnl
+            FROM trades WHERE status='closed'
+            GROUP BY symbol ORDER BY total_pnl DESC
+        """).fetchall()
+        return [dict(r) for r in rows]
+
+
+def daily_pnl(limit: int = 30) -> List[dict]:
+    with _db() as db:
+        rows = db.execute("""
+            SELECT DATE(exited_at) as day,
+                   COUNT(*) as trades,
+                   COALESCE(SUM(pnl),0) as pnl
+            FROM trades WHERE status='closed' AND exited_at IS NOT NULL
+            GROUP BY DATE(exited_at)
+            ORDER BY day DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def agent_summary(trade_id: int) -> List[dict]:
+    with _db() as db:
+        rows = db.execute(
+            "SELECT agent_name, latency_ms, error FROM agent_logs WHERE trade_id=? ORDER BY id",
+            (trade_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def cycle_logs(limit: int = 20) -> List[dict]:
+    """Summary of recent scan cycles: equity snapshots with trade counts."""
+    with _db() as db:
+        rows = db.execute("""
+            SELECT e.id, e.equity, e.timestamp,
+                   (SELECT COUNT(*) FROM trades WHERE status='closed' AND
+                    exited_at >= datetime(e.timestamp, '-15 minutes')) as trades_since
+            FROM equity_snapshots e
+            ORDER BY e.id DESC LIMIT ?
+        """, (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+
+def pipeline_detail(limit: int = 5) -> List[dict]:
+    """Most recent pipeline runs with full agent logs and trade outcome."""
+    with _db() as db:
+        cycles = db.execute("""
+            SELECT e.id, e.equity, e.timestamp
+            FROM equity_snapshots e
+            ORDER BY e.id DESC LIMIT ?
+        """, (limit,)).fetchall()
+        result = []
+        for cycle in cycles:
+            entry = dict(cycle)
+            # Trades logged within 15 min window of this cycle
+            trades = db.execute("""
+                SELECT id, symbol, direction, entry_price, exit_price,
+                       sl, tp, position_size, leverage,
+                       pnl, reason, status,
+                       mayne_score, manager_decision, manager_confidence,
+                       debate_transcript, entered_at, exited_at
+                FROM trades
+                WHERE entered_at >= datetime(?, '-15 minutes')
+                  AND entered_at <= datetime(?, '+15 minutes')
+                ORDER BY id
+            """, (cycle["timestamp"], cycle["timestamp"])).fetchall()
+            entry["trades"] = []
+            for t in trades:
+                td = dict(t)
+                td["agents"] = [dict(a) for a in db.execute("""
+                    SELECT agent_name, prompt, response, latency_ms, error
+                    FROM agent_logs WHERE trade_id=? ORDER BY id
+                """, (t["id"],)).fetchall()]
+                entry["trades"].append(td)
+            result.append(entry)
+        return result

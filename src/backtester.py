@@ -2,19 +2,20 @@
 
 Runs the strategy logic against static candle data to validate OTE/Sweep/FVG rules.
 """
-from src.mayne_scorer import score_mayne
-from src.indicators import find_swings
-from src.binance_client import Candle
+from typing import Dict, List
 
-def run_backtest(symbol: str, htf_candles: List[Candle], ltf_candles: List[Candle], entry_candles: List[Candle]):
+from .mayne_scorer import score_mayne
+from .indicators import find_swings
+from .binance_client import Candle
+
+
+def run_backtest(symbol: str, tf_candles: Dict[str, List[Candle]], sweep_candles: List[Candle],
+                 entry_candles: List[Candle]):
     print(f"--- Backtesting {symbol} ---")
-    
-    # Try both long and short
+
     for direction in ["long", "short"]:
-        score = score_mayne(htf_candles, ltf_candles, entry_candles, direction)
-        print(f"Direction: {direction} | Score: {score}")
+        result = score_mayne(tf_candles, sweep_candles, entry_candles, direction)
+        print(f"Direction: {direction} | Score: {result.score} | {result.detail}")
 
 if __name__ == "__main__":
-    # Mock data would be needed to actually run this.
-    # This proves the logic is testable.
     print("Backtester implemented. Needs mock Candle data to run.")

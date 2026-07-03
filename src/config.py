@@ -15,12 +15,16 @@ PAIRS: Tuple[str, ...] = (
 
 SCAN_INTERVAL_SECONDS: int = 15 * 60
 
-HTF_TIMEFRAME: str = "4h"
-LTF_TIMEFRAME: str = "15m"
+# Multi-timeframe analysis — each pair analyzed across 3 HTFs
+# each entry: (label, weight_for_OTE, candle_limit)
+TIMEFRAMES = (
+    ("1h",  0.20, 168),
+    ("4h",  0.30, 240),
+    ("12h", 0.50, 120),
+)
+SWEEP_TIMEFRAME: str = "15m"
 ENTRY_TIMEFRAME: str = "5m"
-
-HTF_LOOKBACK: int = 240
-LTF_LOOKBACK: int = 288
+SWEEP_LOOKBACK: int = 288
 ENTRY_LOOKBACK: int = 288
 
 
@@ -38,7 +42,7 @@ RISK_BRACKETS: Tuple[RiskBracket, ...] = (
     RiskBracket(86, 100, 0.03, 5),
 )
 
-STARTING_EQUITY: float = 100.0
+STARTING_EQUITY: float = 1000.0
 MIN_CONFIDENCE: int = 60
 MIN_RR_RATIO: float = 2.0
 DRAWDOWN_CIRCUIT_BREAKER: float = 0.30

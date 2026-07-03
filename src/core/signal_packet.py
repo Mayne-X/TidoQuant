@@ -18,6 +18,7 @@ class MayneResult:
     sweep_level: Optional[float] = None
     fvg_top: Optional[float] = None
     fvg_bottom: Optional[float] = None
+    tf_scores: dict = field(default_factory=dict)   # per-timeframe OTE scores
     detail: str = ""                    # human-readable summary for LLM context
 
 
@@ -29,9 +30,9 @@ class SignalPacket:
 
     entry_price: float
     current_price: float
-    htf_candles: list = field(default_factory=list)       # raw klines for agents
-    ltf_candles: list = field(default_factory=list)
-    entry_candles: list = field(default_factory=list)
+    tf_candles: dict = field(default_factory=dict)        # {"1h": [...], "4h": [...], "12h": [...]}
+    sweep_candles: list = field(default_factory=list)     # 15m klines for sweep detection
+    entry_candles: list = field(default_factory=list)     # 5m klines for FVG
 
     funding_rate: float = 0.0
     mark_price: float = 0.0
@@ -81,11 +82,12 @@ class SignalPacket:
     manager_reasoning: Optional[str] = None
 
     # Internal tracking
+    trade_id: int = -1
     agent_errors: List[str] = field(default_factory=list)
 
     @property
     def total_confidence(self) -> int:
-        return self.mayne.score + (self.mayne.score if self.manager_confidence is None else 0)
+        return self.mayne.score + (self.manager_confidence or 0)
 
     def debate_transcript(self) -> str:
         """Collapse all debate rounds into a single string for DB logging."""
