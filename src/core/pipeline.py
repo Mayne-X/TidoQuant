@@ -28,7 +28,7 @@ from ..database import (
 
 log = logging.getLogger("tidoquant")
 
-PIPELINE_TIMEOUT: int = 120  # max seconds for one full pipeline run
+PIPELINE_TIMEOUT: int = 600  # max seconds for one full pipeline run (accounts for cold model load)
 
 
 class Pipeline:

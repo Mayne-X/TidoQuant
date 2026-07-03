@@ -71,6 +71,11 @@ def run_loop():
                         if mayne_short.passed_gate:
                             mayne = mayne_short
                         else:
+                            log.info(
+                                "%s: Mayne long=%d short=%d best=%d — gate missed (need ≥60)",
+                                symbol, mayne.score, mayne_short.score,
+                                max(mayne.score, mayne_short.score),
+                            )
                             continue
 
                     log.info(

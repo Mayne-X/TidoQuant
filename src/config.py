@@ -54,7 +54,7 @@ import os as _os
 OLLAMA_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 GEMMA4_MODEL: str = "gemma4"
 NUM_CTX: int = 131072
-OLLAMA_TIMEOUT: int = 45
+OLLAMA_TIMEOUT: int = 180
 OLLAMA_TEMPERATURE: float = 0.3
 
 # --- SQLite ---
