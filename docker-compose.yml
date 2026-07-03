@@ -1,0 +1,32 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    restart: unless-stopped
+    volumes:
+      - ./journal:/app/journal
+      - ./reports:/app/reports
+      - ./skills:/app/skills
+    ports:
+      - "4900:4900"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    restart: unless-stopped
+    volumes:
+      - ./journal:/journal:ro
+    ports:
+      - "5000:3000"
+    environment:
+      - PORT=3000
+    depends_on:
+      - backend

@@ -1,0 +1,10 @@
+dashboard/node_modules
+dashboard/.next
+dashboard/dist
+__pycache__
+*.pyc
+.git
+.vscode
+journal
+reports
+skills
