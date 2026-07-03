@@ -1,62 +1,150 @@
-"""Main Bot Loop.
+"""Main Bot Loop — orchestrates scanning, gating, pipeline, and execution."""
+from __future__ import annotations
 
-Orchestrates all components every 15 minutes.
-Includes random inter-symbol delays to avoid rate-limit patterns.
-"""
+import logging
 import random
 import time
-import logging
-from .config import PAIRS, SCAN_INTERVAL_SECONDS, MIN_CONFIDENCE
+
+from .agents.ollama_client import OllamaClient, OllamaConnectionError
 from .binance_client import safe_client
-from .indicators import find_swings
+from .config import PAIRS, SCAN_INTERVAL_SECONDS
+from .core.pipeline import Pipeline
+from .core.signal_packet import SignalPacket
+from .database import (
+    dashboard_summary,
+    get_open_trades,
+    insert_trade,
+    migrate,
+    snapshot_equity,
+)
 from .mayne_scorer import score_mayne
-from .catalyst_scorer import score_catalyst
-from .adversarial_debate import debate_trade
-from .finance_manager import calculate_position
 from .paper_engine import PaperEngine
 
+log = logging.getLogger("tidoquant")
+
+
 def run_loop():
-    log = logging.getLogger("tidoquant")
+    migrate()
     client = safe_client()
-    engine = PaperEngine(journal_path="journal/trades.jsonl")
-    
-    log.info("Starting bot loop...")
-    
+    engine = PaperEngine()
+
+    # Try Ollama — if it's down, run in Mayne-only fallback mode
+    ollama = OllamaClient()
+    try:
+        if not ollama.health():
+            log.warning("Ollama not reachable — running in Mayne-only mode")
+            pipeline = None
+        else:
+            pipeline = Pipeline(ollama)
+            log.info("Ollama connected — multi-agent pipeline active")
+    except OllamaConnectionError:
+        log.warning("Ollama connection failed — Mayne-only mode")
+        pipeline = None
+
+    log.info("TidoQuant v2 starting...")
+
     while True:
         if not engine.is_trading_allowed():
             log.warning("Circuit breaker active! Trading paused.")
         else:
             for symbol in PAIRS:
                 try:
-                    # 1. Fetch Data
                     htf = client.klines(symbol, "4h", limit=100)
                     ltf = client.klines(symbol, "15m", limit=100)
                     entry = client.klines(symbol, "5m", limit=100)
+                    if not entry:
+                        continue
 
-                    # 2. Score
-                    mayne = score_mayne(htf, ltf, entry, direction="long")
-                    catalyst = score_catalyst(symbol)
-                    total = mayne + catalyst
+                    price = entry[-1].close
+                    mark_info = client.mark_price(symbol)
+                    fund_info = client.funding_rate(symbol)
 
-                    # 3. Debate + Execute
-                    if total >= MIN_CONFIDENCE and debate_trade(symbol, mayne, catalyst, entry):
-                        pos = calculate_position(total, engine.equity)
-                        engine.open_position({
-                            "symbol": symbol,
-                            "direction": "long",
-                            "entry": entry[-1].close,
-                            "sl": entry[-1].close * 0.98,
-                            "tp": entry[-1].close * 1.04,
-                            **pos
-                        })
+                    # 1. GATEKEEPER — Mayne must pass
+                    mayne = score_mayne(htf, ltf, entry, "long")
 
-                    # 4. Update existing
-                    engine.update_price(symbol, entry[-1].close)
+                    if not mayne.passed_gate:
+                        # Also check short direction
+                        mayne_short = score_mayne(htf, ltf, entry, "short")
+                        if mayne_short.passed_gate:
+                            mayne = mayne_short
+                        else:
+                            continue
+
+                    log.info(
+                        "%s: Mayne score %d (%s) — gate passed",
+                        symbol, mayne.score, mayne.detail,
+                    )
+
+                    # 2. Build signal packet
+                    packet = SignalPacket(
+                        symbol=symbol,
+                        direction=mayne.direction,
+                        mayne=mayne,
+                        entry_price=price,
+                        current_price=price,
+                        htf_candles=htf,
+                        ltf_candles=ltf,
+                        entry_candles=entry,
+                        funding_rate=mark_info.get("rate", 0.0),
+                        mark_price=mark_info.get("mark", price),
+                        open_interest=client.open_interest_history(symbol),
+                        long_short_ratio=client.long_short_account_ratio(symbol),
+                    )
+
+                    # 3. If pipeline is active, run it
+                    if pipeline is not None:
+                        packet = pipeline.run(packet)
+                    else:
+                        # Mayne-only fallback: basic sizing
+                        packet.manager_decision = "GO"
+                        packet.manager_confidence = mayne.score
+                        packet.manager_reasoning = (
+                            f"Mayne-only mode (Ollama unavailable). Score {mayne.score}."
+                        )
+                        packet.stop_loss = price * 0.98
+                        packet.take_profit = price * 1.04
+                        packet.leverage = 2
+                        packet.position_size_usd = 100 * 0.01 * 2
+
+                    # 4. Execute if manager approves
+                    if packet.manager_decision == "GO":
+                        trade_id = insert_trade(packet)
+                        engine.open_position(packet, trade_id)
+                        log.info(
+                            "%s: TRADE OPENED id=%d direction=%s size=$%.2f "
+                            "SL=%.2f TP=%.2f (manager conf=%d)",
+                            symbol, trade_id, packet.direction,
+                            packet.position_size_usd or 0,
+                            packet.stop_loss or 0, packet.take_profit or 0,
+                            packet.manager_confidence or 0,
+                        )
+                    else:
+                        log.info(
+                            "%s: NO-GO (manager confidence=%d)",
+                            symbol, packet.manager_confidence or 0,
+                        )
+
                 except Exception as exc:
                     log.error("error processing %s: %s", symbol, exc, exc_info=True)
 
-                # Jitter between symbols to de-pattern API calls
                 time.sleep(random.uniform(0.3, 1.5))
 
-        log.info("Cycle complete. Sleeping %ds...", SCAN_INTERVAL_SECONDS)
+            # Update open positions
+            for symbol in PAIRS:
+                try:
+                    entry = client.klines(symbol, "5m", limit=1)
+                    if entry:
+                        engine.update_positions(symbol, entry[-1].close)
+                except Exception as exc:
+                    log.warning("update price failed for %s: %s", symbol, exc)
+
+            # Snapshot equity
+            eq = engine.equity
+            snapshot_equity(eq)
+            summary = dashboard_summary()
+            log.info(
+                "Cycle complete. Equity=$%.2f Trades=%d Wins=%d Losses=%d",
+                eq, summary["total_trades"], summary["wins"], summary["losses"],
+            )
+
         time.sleep(SCAN_INTERVAL_SECONDS)

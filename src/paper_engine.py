@@ -1,84 +1,97 @@
-"""Paper Trading Engine.
+"""Paper Trading Engine with SQLite persistence.
 
-Handles accounting, equity tracking, trade simulation, and fee deduction.
-Does NOT poll the market — the main loop drives the state updates.
+Tracks equity, open positions, and closed trade settlement.
 """
 from __future__ import annotations
-import json
+
 import logging
-import os
-from datetime import datetime
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+
 from .config import STARTING_EQUITY, TAKER_FEE, DRAWDOWN_CIRCUIT_BREAKER
+from .core.signal_packet import SignalPacket
+from .database import close_trade, get_open_trades, latest_equity
+
+log = logging.getLogger("tidoquant")
+
 
 class PaperEngine:
-    def __init__(self, journal_path: str):
-        self.equity = STARTING_EQUITY
-        self.journal_path = journal_path
-        self.open_positions: List[Dict] = []
-        self.log = logging.getLogger("tidoquant")
+    def __init__(self):
+        self.equity = latest_equity()
+        self._positions: Dict[int, dict] = {}  # trade_id -> position snapshot
+
+        # Reload open positions from DB
+        for row in get_open_trades():
+            self._positions[row["id"]] = {
+                "symbol": row["symbol"],
+                "direction": row["direction"],
+                "entry_price": row["entry_price"],
+                "sl": row["sl"],
+                "tp": row["tp"],
+                "position_size": row["position_size"],
+                "leverage": row["leverage"],
+            }
+
+        log.info(
+            "PaperEngine initialised: equity=%.2f open_positions=%d",
+            self.equity, len(self._positions),
+        )
 
     def is_trading_allowed(self) -> bool:
-        # Check circuit breaker
         return self.equity > (STARTING_EQUITY * (1 - DRAWDOWN_CIRCUIT_BREAKER))
 
-    def open_position(self, signal: Dict):
-        """Register a new trade signal."""
-        # Simple simulation: Assume limit fill at entry price.
-        # Deduct fee immediately.
-        fee = signal["position_size"] * TAKER_FEE
+    def open_position(self, packet: SignalPacket, trade_id: int):
+        """Register a new trade. Deduct taker fee from equity."""
+        fee = (packet.position_size_usd or 0) * TAKER_FEE
         self.equity -= fee
-        
-        pos = {
-            **signal,
-            "entry_time": datetime.utcnow().isoformat(),
-            "status": "open",
-            "fee_paid": fee
-        }
-        self.open_positions.append(pos)
-        self.log.info("Position opened: %s", signal["symbol"])
 
-    def update_price(self, symbol: str, current_price: float):
-        """Update market price for open positions, check SL/TP."""
-        for pos in self.open_positions[:]:
+        self._positions[trade_id] = {
+            "symbol": packet.symbol,
+            "direction": packet.direction,
+            "entry_price": packet.entry_price,
+            "sl": packet.stop_loss,
+            "tp": packet.take_profit,
+            "position_size": packet.position_size_usd or 0,
+            "leverage": packet.leverage or 1,
+        }
+
+        log.info(
+            "Position opened: %s %s | size=$%.2f lev=%d | fee=$%.4f",
+            packet.symbol, packet.direction,
+            packet.position_size_usd or 0,
+            packet.leverage or 1,
+            fee,
+        )
+
+    def update_positions(self, symbol: str, current_price: float):
+        """Check SL/TP for all open positions on this symbol."""
+        for trade_id, pos in list(self._positions.items()):
             if pos["symbol"] != symbol:
                 continue
-                
-            # Check Stop Loss
-            if (pos["direction"] == "long" and current_price <= pos["sl"]) or \
-               (pos["direction"] == "short" and current_price >= pos["sl"]):
-                self._close_position(pos, "SL_HIT", current_price)
-                
-            # Check Take Profit
-            elif (pos["direction"] == "long" and current_price >= pos["tp"]) or \
-                 (pos["direction"] == "short" and current_price <= pos["tp"]):
-                self._close_position(pos, "TP_HIT", current_price)
 
-    def _close_position(self, pos: Dict, reason: str, exit_price: float):
-        # Calc PnL
-        size = pos["position_size"]
-        leverage = pos["leverage"]
-        entry = pos["entry"]
-        
-        # PnL % = (Exit - Entry) / Entry * Dir * Lev
-        dir_mult = 1 if pos["direction"] == "long" else -1
-        pnl_pct = (exit_price - entry) / entry * dir_mult * leverage
-        
-        profit = size * pnl_pct
-        self.equity += profit
-        
-        pos.update({
-            "status": "closed",
-            "reason": reason,
-            "exit_price": exit_price,
-            "pnl": profit,
-            "exit_time": datetime.utcnow().isoformat()
-        })
-        
-        # Log to journal
-        with open(self.journal_path, "a") as f:
-            f.write(json.dumps(pos) + "\n")
-            
-        self.open_positions.remove(pos)
-        self.log.info("Position closed: %s | PnL: %.2f | Equity: %.2f", 
-                     pos["symbol"], profit, self.equity)
+            entry = pos["entry_price"]
+            sl = pos["sl"]
+            tp = pos["tp"]
+            direction = pos["direction"]
+            size = pos["position_size"]
+            leverage = pos["leverage"]
+
+            sl_hit = (direction == "long" and current_price <= sl) or \
+                     (direction == "short" and current_price >= sl)
+            tp_hit = (direction == "long" and current_price >= tp) or \
+                     (direction == "short" and current_price <= tp)
+
+            if sl_hit or tp_hit:
+                exit_price = sl if sl_hit else tp
+                reason = "SL_HIT" if sl_hit else "TP_HIT"
+                mult = 1 if direction == "long" else -1
+                pnl_pct = (exit_price - entry) / entry * mult * leverage
+                pnl = size * pnl_pct
+
+                self.equity += pnl  # return margin + profit
+                close_trade(trade_id, exit_price, pnl, reason)
+                del self._positions[trade_id]
+
+                log.info(
+                    "%s: %s | PnL=$%.2f (%.2f%%) | Equity=$%.2f",
+                    symbol, reason, pnl, pnl_pct * 100, self.equity,
+                )

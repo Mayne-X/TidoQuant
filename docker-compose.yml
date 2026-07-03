@@ -11,6 +11,10 @@ services:
       - ./journal:/app/journal
       - ./reports:/app/reports
       - ./skills:/app/skills
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "4900:4900"
 
@@ -22,11 +26,10 @@ services:
       - 8.8.8.8
       - 1.1.1.1
     restart: unless-stopped
-    volumes:
-      - ./journal:/journal:ro
     ports:
       - "5000:3000"
     environment:
       - PORT=3000
+      - API_URL=http://backend:4900
     depends_on:
       - backend
