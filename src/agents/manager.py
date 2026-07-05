@@ -24,6 +24,7 @@ class ManagerAgent(BaseAgent):
             "- NO-GO: The Bear raised valid structural concerns that weren't refuted,\n"
             "  or the risk/reward doesn't justify the trade.\n"
             "- Consider performance_briefing: if streak is losing or asset has high loss rate, be significantly more cautious.\n\n"
+            "IMPORTANT: Return ONLY a valid JSON object. Do not include any introductory or concluding text. Do not use Markdown code blocks (e.g., no ```json). Your response must start with { and end with }.\n\n"
             "OUTPUT JSON:\n"
             '{\n'
             '  "decision": "GO" | "NO-GO",\n'

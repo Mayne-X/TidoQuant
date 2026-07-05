@@ -39,10 +39,9 @@ class OllamaClient:
         user: str,
         temperature: float = OLLAMA_TEMPERATURE,
         max_tokens: int = 1024,
+        retry: bool = True,  # Added retry parameter
     ) -> dict:
-        """Send a chat request. Returns parsed JSON dict.
-        Raises OllamaConnectionError on network failure / non-200.
-        """
+        """Send a chat request. Returns parsed JSON dict."""
         payload = {
             "model": self.model,
             "messages": [
@@ -66,31 +65,31 @@ class OllamaClient:
                 timeout=self.timeout,
             )
         except requests.ConnectionError as exc:
-            raise OllamaConnectionError(
-                f"cannot connect to Ollama at {self.base_url}: {exc}"
-            ) from exc
+            raise OllamaConnectionError(f"cannot connect to Ollama at {self.base_url}: {exc}") from exc
         except requests.Timeout as exc:
-            raise OllamaConnectionError(
-                f"Ollama timeout after {self.timeout}s: {exc}"
-            ) from exc
-
-        elapsed = int((time.perf_counter() - t0) * 1000)
+            raise OllamaConnectionError(f"Ollama timeout after {self.timeout}s: {exc}") from exc
 
         if resp.status_code != 200:
-            raise OllamaConnectionError(
-                f"Ollama HTTP {resp.status_code}: {resp.text[:300]}"
-            )
+            raise OllamaConnectionError(f"Ollama HTTP {resp.status_code}: {resp.text[:300]}")
 
         raw = resp.json()
         content: str = raw.get("message", {}).get("content", "")
-
-        # Attempt JSON parse — models sometimes return markdown-wrapped JSON
+        
         parsed = _extract_json(content)
-        if parsed is None:
-            log.warning(
-                "Ollama returned non-json content (%.0f chars). "
-                "Falling back to empty dict.", len(content)
+        
+        # Retry mechanism
+        if parsed is None and retry:
+            log.warning("Ollama JSON parsing failed. Retrying with stricter constraints...")
+            return self.chat(
+                system=system,
+                user=f"{user}\n\nSTRICT INSTRUCTION: Your previous response was not valid JSON. "
+                     "Return ONLY valid JSON. No Markdown formatting, no explanations.",
+                temperature=0.1,  # Lower temperature for retry
+                retry=False,      # No recursive retry
             )
+        
+        if parsed is None:
+            log.warning("Ollama returned non-json content. Falling back to empty dict.")
             return {}
 
         return parsed
