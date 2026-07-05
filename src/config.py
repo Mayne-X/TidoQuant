@@ -15,13 +15,14 @@ PAIRS: Tuple[str, ...] = (
 
 SCAN_INTERVAL_SECONDS: int = 15 * 60
 
-# Multi-timeframe analysis — each pair analyzed across 3 HTFs
-# each entry: (label, weight_for_OTE, candle_limit)
-TIMEFRAMES = (
-    ("1h",  0.20, 168),
-    ("4h",  0.30, 240),
+# --- Mayne Scorer Parameters ---
+MAYNE_TF_WEIGHTS: Tuple[Tuple[str, float, int], ...] = (
+    ("1h", 0.20, 168),
+    ("4h", 0.30, 240),
     ("12h", 0.50, 120),
 )
+MAYNE_PIVOT_DEPTH: int = 3
+MAYNE_CONFLUENCE_BONUS: int = 15
 SWEEP_TIMEFRAME: str = "15m"
 ENTRY_TIMEFRAME: str = "5m"
 SWEEP_LOOKBACK: int = 288

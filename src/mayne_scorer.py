@@ -9,9 +9,7 @@ from typing import Dict, List, Tuple
 from .binance_client import Candle
 from .indicators import find_swings, calculate_ote_score, detect_fvg_mitigated, detect_sweep
 from .core.signal_packet import MayneResult
-
-
-TF_WEIGHTS = {"1h": 0.20, "4h": 0.30, "12h": 0.50}
+from .config import MAYNE_TF_WEIGHTS, MAYNE_CONFLUENCE_BONUS
 
 
 def score_mayne(
@@ -30,6 +28,9 @@ def score_mayne(
     is_long = (direction == "long")
 
     # 1. Multi-timeframe OTE — scored on each HTF, weighted
+    # MAYNE_TF_WEIGHTS is list of (label, weight, limit)
+    tf_weights_dict = {t[0]: t[1] for t in MAYNE_TF_WEIGHTS}
+
     for tf_label, candles in tf_candles.items():
         swings = find_swings(candles)
         pts = 0
@@ -51,7 +52,7 @@ def score_mayne(
 
     # Weighted OTE sum (max 25)
     weighted_ote = sum(
-        pts * TF_WEIGHTS.get(tf, 0) for tf, pts in tf_scores.items()
+        pts * tf_weights_dict.get(tf, 0) for tf, pts in tf_scores.items()
     )
     ote_pts = int(weighted_ote)
 
@@ -77,11 +78,22 @@ def score_mayne(
                 tf_details.append(f"FVG {fvg_pts}/25")
                 break
 
-    score = ote_pts + sweep_pts + fvg_pts
+    # Dynamic Confluence Bonus
+    confluence_count = 0
+    if ote_pts > 0: confluence_count += 1
+    if sweep_pts > 0: confluence_count += 1
+    if fvg_pts > 0: confluence_count += 1
+    
+    bonus = 0
+    if confluence_count >= 3:
+        bonus = MAYNE_CONFLUENCE_BONUS
+        tf_details.append(f"confluence bonus {bonus}/15")
+
+    score = ote_pts + sweep_pts + fvg_pts + bonus
     passed = score >= 60
 
     return MayneResult(
-        score=min(75, score),
+        score=min(90, score),
         passed_gate=passed,
         direction=direction,
         ote_points=ote_pts,

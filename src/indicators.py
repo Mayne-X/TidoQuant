@@ -7,9 +7,10 @@ from __future__ import annotations
 from typing import List, Optional, Tuple
 
 from .binance_client import Candle
+from .config import MAYNE_PIVOT_DEPTH
 
 
-def find_swings(candles: List[Candle], pivot_depth: int = 3) -> List[Tuple[str, Candle]]:
+def find_swings(candles: List[Candle], pivot_depth: int = MAYNE_PIVOT_DEPTH) -> List[Tuple[str, Candle]]:
     """Simple fractal swing detector.
     Returns list of ('high'|'low', Candle).
     """

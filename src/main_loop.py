@@ -7,7 +7,7 @@ import time
 
 from .agents.ollama_client import OllamaClient, OllamaConnectionError
 from .binance_client import safe_client
-from .config import PAIRS, SCAN_INTERVAL_SECONDS, STARTING_EQUITY, TIMEFRAMES
+from .config import PAIRS, SCAN_INTERVAL_SECONDS, STARTING_EQUITY, MAYNE_TF_WEIGHTS
 from .core.pipeline import Pipeline
 from .core.signal_packet import SignalPacket
 from .database import (
@@ -24,7 +24,7 @@ log = logging.getLogger("tidoquant")
 def _fetch_tf_candles(client, symbol):
     """Fetch all 3 HTF candle sets + sweep + entry in parallel-ish."""
     tf_candles = {}
-    for tf_label, _weight, limit in TIMEFRAMES:
+    for tf_label, _weight, limit in MAYNE_TF_WEIGHTS:
         tf_candles[tf_label] = client.klines(symbol, tf_label, limit=limit)
     sweep = client.klines(symbol, "15m", limit=144)    # ~36h of 15m
     entry = client.klines(symbol, "5m", limit=144)     # ~12h of 5m
@@ -144,6 +144,12 @@ def run_loop():
                         engine.update_positions(symbol, candle.high, candle.low)
                 except Exception as exc:
                     log.warning("update price failed for %s: %s", symbol, exc)
+
+            # Log active positions
+            if engine._positions:
+                log.info("--- ACTIVE POSITIONS ---")
+                for tid, pos in engine._positions.items():
+                    log.info("Trade %d | %s | %s | Entry: %.2f", tid, pos['symbol'], pos['direction'], pos['entry_price'])
 
             # Snapshot equity
             eq = engine.equity

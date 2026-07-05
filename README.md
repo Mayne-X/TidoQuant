@@ -55,7 +55,7 @@ open http://localhost:5000
 ## Trading Logic
 
 1. **Scan** — Every 15 minutes, fetch 5 perps (BTC/ETH/SOL/BNB/XRP) across 3 timeframes (1h/4h/12h)
-2. **Mayne Gate** — Algorithmic score (0-75) based on OTE zone + Sweep detection + FVG detection; multi-timeframe weighted (20%/30%/50%)
+2. **Mayne Gate** — Configurable algorithmic score (0-90) based on OTE zone + Sweep detection + FVG detection; multi-timeframe weighted (configurable via `config.py`) + Dynamic Confluence Bonus.
 3. **AI Pipeline** — 8-agent debate with full transcript logging:
    - Researcher: on-chain + macro analysis
    - Sentiment: social/news polarity
@@ -65,6 +65,7 @@ open http://localhost:5000
    - Manager: final GO/NO-GO with confidence score
 4. **Execution** — Paper engine tracks positions, SL/TP (checked intra-interval via candle High/Low), equity; circuit breaker at -30% drawdown
 5. **Memory & Learning** — Dynamic performance briefings injected into agent prompts; data export for fine-tuning.
+6. **Mayne Refinements** — Configurable TFs/Weights, Dynamic Confluence Bonus for high-conviction setups, and robust intra-interval SL/TP checking using candle High/Low.
 
 ## Risk Parameters
 
