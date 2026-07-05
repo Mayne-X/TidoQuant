@@ -355,7 +355,7 @@ def pipeline_detail(limit: int = 5) -> List[dict]:
             for t in trades:
                 td = dict(t)
                 td["agents"] = [dict(a) for a in db.execute("""
-                    SELECT agent_name, prompt, response, latency_ms, error
+                    SELECT agent_name, prompt, response, latency_ms, error, created_at
                     FROM agent_logs WHERE trade_id=? ORDER BY id
                 """, (t["id"],)).fetchall()]
                 entry["trades"].append(td)

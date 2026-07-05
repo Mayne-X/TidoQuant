@@ -81,6 +81,7 @@ export interface AgentLog {
   response: string;
   latency_ms: number | null;
   error: string | null;
+  created_at?: string;
 }
 
 export interface PipelineTrade {

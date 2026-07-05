@@ -52,7 +52,7 @@ class APIHandler(BaseHTTPRequestHandler):
         elif path == "/api/cycles" or path == "/cycles":
             self._json(cycle_logs(20))
         elif path == "/api/pipeline" or path == "/pipeline":
-            self._json(pipeline_detail(20))
+            self._json(pipeline_detail(50))
         elif path == "/api/health" or path == "/health":
             self._json({"status": "ok", "agent_pipeline": "active"})
         else:
