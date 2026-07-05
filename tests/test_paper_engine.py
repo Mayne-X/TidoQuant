@@ -59,7 +59,7 @@ class TestPaperEngine:
         engine.open_position(p, tid)
 
         # Price hits TP
-        engine.update_positions("BTCUSDT", 52000)
+        engine.update_positions("BTCUSDT", 52000, 52000)
         assert tid not in engine._positions
         assert engine.equity > STARTING_EQUITY - 0.04  # fee deducted but TP added
 
@@ -70,7 +70,7 @@ class TestPaperEngine:
         engine.open_position(p, tid)
 
         # Price hits SL
-        engine.update_positions("BTCUSDT", 49000)
+        engine.update_positions("BTCUSDT", 49000, 49000)
         assert tid not in engine._positions
         assert engine.equity < STARTING_EQUITY  # lost money + fee
 
@@ -80,7 +80,7 @@ class TestPaperEngine:
         tid = insert_trade(p)
         engine.open_position(p, tid)
 
-        engine.update_positions("BTCUSDT", 50500)
+        engine.update_positions("BTCUSDT", 50500, 50500)
         assert tid in engine._positions
 
     def test_circuit_breaker_at_30_percent(self):
@@ -105,7 +105,7 @@ class TestPaperEngine:
         tid = insert_trade(p)
         initial = engine.equity
         engine.open_position(p, tid)
-        engine.update_positions("BTCUSDT", 52000)
+        engine.update_positions("BTCUSDT", 52000, 52000)
         # Equity should be initial - fee + 8
         expected = initial - (100 * 0.0004) + 8.0
         assert abs(engine.equity - expected) < 0.01
@@ -117,7 +117,7 @@ class TestPaperEngine:
         initial = engine.equity
         engine.open_position(p, tid)
         # Short: price drops to 48000 = profit
-        engine.update_positions("BTCUSDT", 48000)
+        engine.update_positions("BTCUSDT", 48000, 48000)
         # PnL = (48000-50000)/50000 * (-1) * 2 * 100 = (2000/50000)*2*100 = $8
         expected = initial - (100 * 0.0004) + 8.0
         assert abs(engine.equity - expected) < 0.01
@@ -127,5 +127,5 @@ class TestPaperEngine:
         p = make_packet(symbol="BTCUSDT", entry=50000, sl=49000, tp=52000)
         tid = insert_trade(p)
         engine.open_position(p, tid)
-        engine.update_positions("ETHUSDT", 999999)  # shouldn't affect BTC position
+        engine.update_positions("ETHUSDT", 999999, 999999)  # shouldn't affect BTC position
         assert tid in engine._positions

@@ -19,6 +19,7 @@ from ..agents.bear import BearAgent
 from ..agents.treasury import TreasuryAgent
 from ..agents.manager import ManagerAgent
 from ..core.signal_packet import SignalPacket
+from ..core.memory import build_performance_briefing
 from ..database import (
     insert_placeholder_trade,
     log_agent_call,
@@ -61,6 +62,9 @@ class Pipeline:
         packet.trade_id = trade_id
         log.info("pipeline placeholder trade id=%d for %s", trade_id, packet.symbol)
 
+        # Inject performance memory/briefing for agents
+        memory_briefing = build_performance_briefing()
+        
         for agent in self.agents:
             elapsed = time.monotonic() - started
             if elapsed > PIPELINE_TIMEOUT:
@@ -72,6 +76,10 @@ class Pipeline:
                 break
 
             try:
+                # Treasury and Manager receive the memory briefing
+                if agent.name in ["treasury", "manager"]:
+                    packet.memory_briefing = memory_briefing
+                
                 packet = agent.run(packet, trade_id=trade_id)
             except Exception as exc:
                 log.error("pipeline: %s crashed: %s", agent.name, exc)

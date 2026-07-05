@@ -84,14 +84,21 @@ class SignalPacket:
     # Internal tracking
     trade_id: int = -1
     agent_errors: List[str] = field(default_factory=list)
+    memory_briefing: Optional[str] = None
 
     @property
     def total_confidence(self) -> int:
         return self.mayne.score + (self.manager_confidence or 0)
 
     def debate_transcript(self) -> str:
-        """Collapse all debate rounds into a single string for DB logging."""
+        """Collapse all agent outputs into a single string for DB logging."""
         parts = []
+        if self.researcher_report:
+            parts.append(f"[RESEARCHER] Macro: {self.macro_regime} | OI: {self.oi_trend}")
+            parts.append(f"Report: {self.researcher_report}")
+        if self.sentiment_summary:
+            parts.append(f"[SENTIMENT] Polarity: {self.sentiment_polarity} | Skew: {self.crowd_skew}")
+            parts.append(f"Summary: {self.sentiment_summary}")
         if self.bull_thesis_r1:
             parts.append(f"[BULL R1] Score {self.bull_score_r1}: {self.bull_thesis_r1}")
         if self.bear_rebuttal_r1:
@@ -100,4 +107,10 @@ class SignalPacket:
             parts.append(f"[BULL R2] Score {self.bull_score_r2}: {self.bull_counter_rebuttal}")
         if self.bear_final_objection:
             parts.append(f"[BEAR R2] Score {self.bear_score_r2}: {self.bear_final_objection}")
+        if self.treasury_note:
+            parts.append(f"[TREASURY] Risk: {self.risk_pct*100}% | Lev: {self.leverage}x | SL: {self.stop_loss} | TP: {self.take_profit}")
+            parts.append(f"Note: {self.treasury_note}")
+        if self.manager_reasoning:
+            parts.append(f"[MANAGER] Decision: {self.manager_decision} | Conf: {self.manager_confidence}/100")
+            parts.append(f"Reasoning: {self.manager_reasoning}")
         return "\n".join(parts)

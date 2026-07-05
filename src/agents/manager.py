@@ -22,7 +22,8 @@ class ManagerAgent(BaseAgent):
             "- GO: The technical structure is sound, the Bull made stronger arguments,\n"
             "  and the Bear's risks are manageable with the proposed SL.\n"
             "- NO-GO: The Bear raised valid structural concerns that weren't refuted,\n"
-            "  or the risk/reward doesn't justify the trade.\n\n"
+            "  or the risk/reward doesn't justify the trade.\n"
+            "- Consider performance_briefing: if streak is losing or asset has high loss rate, be significantly more cautious.\n\n"
             "OUTPUT JSON:\n"
             '{\n'
             '  "decision": "GO" | "NO-GO",\n'
@@ -34,7 +35,7 @@ class ManagerAgent(BaseAgent):
         )
 
     def _packet_input(self, packet: SignalPacket) -> dict:
-        return {
+        data = {
             "symbol": packet.symbol,
             "direction": packet.direction,
             "entry_price": packet.entry_price,
@@ -76,6 +77,9 @@ class ManagerAgent(BaseAgent):
                 "note": packet.treasury_note,
             },
         }
+        if packet.memory_briefing:
+            data["performance_briefing"] = packet.memory_briefing
+        return data
 
     def enrich(self, packet: SignalPacket, result: dict) -> SignalPacket:
         packet.manager_decision = result.get("decision", "NO-GO")

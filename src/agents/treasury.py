@@ -23,7 +23,8 @@ class TreasuryAgent(BaseAgent):
             "- Higher Bull score relative to Bear = more conviction = larger size\n"
             "- Never risk more than 3% of equity on a single trade\n"
             "- Leverage must be between 1x and 5x\n"
-            "- R:R ratio must be at least 2:1\n\n"
+            "- R:R ratio must be at least 2:1\n"
+            "- If performance_briefing indicates a losing streak or poor asset performance, significantly reduce risk_pct.\n\n"
             "OUTPUT JSON:\n"
             '{\n'
             '  "risk_pct": 0.01 to 0.03 (e.g. 0.02 = 2%),\n'
@@ -46,7 +47,7 @@ class TreasuryAgent(BaseAgent):
                        (1 if packet.bear_score_r2 is not None else 0))
         net = bull_avg - bear_avg  # -10 to +10
 
-        return {
+        data = {
             "symbol": packet.symbol,
             "direction": packet.direction,
             "entry_price": packet.entry_price,
@@ -57,6 +58,9 @@ class TreasuryAgent(BaseAgent):
             "net_conviction": round(net, 1),
             "mayne_score": packet.mayne.score,
         }
+        if packet.memory_briefing:
+            data["performance_briefing"] = packet.memory_briefing
+        return data
 
     def enrich(self, packet: SignalPacket, result: dict) -> SignalPacket:
         packet.risk_pct = result.get("risk_pct", 0.01)

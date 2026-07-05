@@ -62,8 +62,8 @@ class PaperEngine:
             fee,
         )
 
-    def update_positions(self, symbol: str, current_price: float):
-        """Check SL/TP for all open positions on this symbol."""
+    def update_positions(self, symbol: str, high: float, low: float):
+        """Check SL/TP for all open positions on this symbol using candle H/L."""
         for trade_id, pos in list(self._positions.items()):
             if pos["symbol"] != symbol:
                 continue
@@ -75,12 +75,14 @@ class PaperEngine:
             size = pos["position_size"]
             leverage = pos["leverage"]
 
-            sl_hit = (direction == "long" and current_price <= sl) or \
-                     (direction == "short" and current_price >= sl)
-            tp_hit = (direction == "long" and current_price >= tp) or \
-                     (direction == "short" and current_price <= tp)
+            # SL/TP hit logic based on High/Low to catch intra-interval spikes
+            sl_hit = (direction == "long" and low <= sl) or \
+                     (direction == "short" and high >= sl)
+            tp_hit = (direction == "long" and high >= tp) or \
+                     (direction == "short" and low <= tp)
 
             if sl_hit or tp_hit:
+                # If both hit, prioritize SL for conservative risk management
                 exit_price = sl if sl_hit else tp
                 reason = "SL_HIT" if sl_hit else "TP_HIT"
                 mult = 1 if direction == "long" else -1

@@ -1,6 +1,11 @@
 # TidoQuant
 
-Autonomous multi-agent crypto paper-trading bot. Runs Trader Mayne's OTE/Sweep/FVG playbook as an algorithmic gatekeeper, then passes winning signals through a 8-agent AI debate pipeline (Researcher → Sentiment → Bull R1 → Bear R1 → Bull R2 → Bear R2 → Treasury → Manager) powered by Gemma 4 via Ollama. All agent calls are logged with full prompt/response/latency.
+Autonomous multi-agent crypto paper-trading bot. Runs Trader Mayne's OTE/Sweep/FVG playbook as an algorithmic gatekeeper, then passes winning signals through a 8-agent AI debate pipeline (Researcher → Sentiment → Bull R1 → Bear R1 → Bull R2 → Bear R2 → Treasury → Manager) powered by **Qwen2.5:7b** via Ollama. 
+
+Features:
+- **Full Agent Visibility**: Every agent call is logged with prompt/response/latency.
+- **Dynamic Memory**: Heuristic-based performance tracking that injects lessons learned (win streaks, asset performance, score accuracy) into agent prompts.
+- **Fine-Tuning Ready**: Autonomous dataset exporter (`scripts/export_dataset.py`) captures full pipeline conversations for future model training.
 
 ## Architecture
 
@@ -27,9 +32,9 @@ Binance REST API  ──→  Mayne Gate (Python scorer)
 ## Quick Start
 
 ```bash
-# 1. Ensure Ollama is running with Gemma 4
+# 1. Ensure Ollama is running with Qwen2.5:7b
 ollama serve
-ollama pull gemma4
+ollama pull qwen2.5:7b
 
 # 2. Start with Docker
 docker compose up -d --build
@@ -45,7 +50,7 @@ open http://localhost:5000
 | **Backend** | Python 3.12 | 4900 | Main loop, agents, paper engine, REST API |
 | **Frontend** | Next.js 16 | 5000 | Dashboard + Pipeline visualizer |
 | **Database** | SQLite (WAL) | — | Trades, agent logs, equity snapshots |
-| **AI** | Gemma 4 (Ollama) | 11434 | All 8 agents + debate rounds |
+| **AI** | Qwen2.5:7b (Ollama) | 11434 | All 8 agents + debate rounds |
 
 ## Trading Logic
 
@@ -58,7 +63,8 @@ open http://localhost:5000
    - Bull R2 → Bear R2: round 2 counter-rebuttals
    - Treasury: position sizing (risk brackets 1%/2x, 2%/3x, 3%/5x)
    - Manager: final GO/NO-GO with confidence score
-4. **Execution** — Paper engine tracks positions, SL/TP, equity; circuit breaker at -30% drawdown
+4. **Execution** — Paper engine tracks positions, SL/TP (checked intra-interval via candle High/Low), equity; circuit breaker at -30% drawdown
+5. **Memory & Learning** — Dynamic performance briefings injected into agent prompts; data export for fine-tuning.
 
 ## Risk Parameters
 

@@ -52,7 +52,7 @@ TAKER_FEE: float = 0.0004
 # --- Ollama (override via env var for Docker) ---
 import os as _os
 OLLAMA_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-GEMMA4_MODEL: str = "gemma4"
+GEMMA4_MODEL: str = "qwen2.5:7b"
 NUM_CTX: int = 131072
 OLLAMA_TIMEOUT: int = 180
 OLLAMA_TEMPERATURE: float = 0.3

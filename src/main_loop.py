@@ -119,7 +119,7 @@ def run_loop():
                         log.info(
                             "%s: TRADE OPENED id=%d direction=%s size=$%.2f "
                             "SL=%.2f TP=%.2f (manager conf=%d)",
-                            symbol, trade_id, packet.direction,
+                            symbol, packet.trade_id, packet.direction,
                             packet.position_size_usd or 0,
                             packet.stop_loss or 0, packet.take_profit or 0,
                             packet.manager_confidence or 0,
@@ -140,7 +140,8 @@ def run_loop():
                 try:
                     entry = client.klines(symbol, "5m", limit=1)
                     if entry:
-                        engine.update_positions(symbol, entry[-1].close)
+                        candle = entry[-1]
+                        engine.update_positions(symbol, candle.high, candle.low)
                 except Exception as exc:
                     log.warning("update price failed for %s: %s", symbol, exc)
 
