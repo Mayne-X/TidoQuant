@@ -6,7 +6,7 @@ import {
   StatCard, DataTable, Badge, Drawer, ProgressBar 
 } from '@/components/ui';
 import { HeaderBar } from '@/components/header-bar';
-import { fetchPipeline } from '../lib/data';
+import { fetchPipeline, serverFetch } from '../lib/data';
 import type { PipelineCycle, PipelineTrade, AgentLog } from '../lib/data';
 import { cn, fmtUSD, fmtNum, relTime } from '@/components/cn';
 
@@ -25,7 +25,7 @@ const PipelinePage: NextPage<Props> = ({ initial }) => {
 
   const refresh = useCallback(async () => {
     try {
-      const data = await fetchPipeline();
+  const data = await serverFetch('/api/pipeline');
       if (data && data.length > 0) setCycles(data);
     } catch { /* ignore */ }
   }, []);
@@ -103,7 +103,7 @@ const PipelinePage: NextPage<Props> = ({ initial }) => {
 
 interface Props { initial: PipelineCycle[] }
 export const getServerSideProps: GetServerSideProps = async () => {
-  const data = await fetchPipeline();
+  const data = await serverFetch('/api/pipeline');
   return { props: { initial: data || [] } };
 };
 
