@@ -91,6 +91,7 @@ function TradeDetailCard({ trade }: { trade: PipelineTrade }) {
     { label: 'Position Size', value: trade.position_size ? fmtUSD(trade.position_size) : '—', muted: !trade.position_size },
     { label: 'Leverage', value: trade.leverage ? `${trade.leverage}x` : '—', muted: !trade.leverage },
     { label: 'Duration', value: fmtDuration(trade.entered_at, trade.exited_at) },
+    { label: 'Limit Price', value: trade.limit_price ? fmtUSD(trade.limit_price) : '—', muted: !trade.limit_price },
   ];
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
@@ -219,6 +220,9 @@ function TradeView({
       <div className="flex items-center gap-3 flex-wrap">
         <span className="text-lg font-bold tabular">{trade.symbol}</span>
         <DirBadge dir={trade.direction} />
+        <Badge tone={trade.strategy === 'scalper' ? 'purple' : 'info'}>
+          {trade.strategy === 'scalper' ? 'SCALPER' : 'SWING'}
+        </Badge>
         <Badge tone={statusBadge.tone}>{statusBadge.label}</Badge>
       </div>
 
@@ -227,6 +231,15 @@ function TradeView({
         <StatCard label="Decision" value={trade.manager_decision || '—'} tone={decisionTone} />
         <StatCard label="Confidence" value={trade.manager_confidence != null ? `${trade.manager_confidence}%` : '—'} tone="warning" />
         <StatCard label="PnL" value={pnl != null ? fmtUSD(pnl) : '—'} tone={pnlTone} icon={pnl != null ? pnl >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" /> : undefined} />
+        {trade.strategy === 'scalper' && trade.filter_score != null && (
+          <StatCard label="Filter Score" value={`${trade.filter_score}%`} tone={trade.filter_score >= 60 ? 'success' : 'destructive'} hint={trade.filter_score >= 60 ? 'Passed' : 'Blocked'} />
+        )}
+        {trade.strategy === 'scalper' && trade.scalper_score != null && (
+          <StatCard label="Scalper Score" value={trade.scalper_score} tone="purple" />
+        )}
+        {trade.limit_price != null && (
+          <StatCard label="Limit Price" value={fmtUSD(trade.limit_price)} tone="info" />
+        )}
       </div>
 
       <Card>
@@ -366,6 +379,8 @@ const PipelinePage: NextPage<Props> = ({ initial }) => {
       tradeCount: c.trades.length,
       decisions: c.trades.map(t => t.manager_decision).filter(Boolean),
       hasError: c.trades.some(t => t.agents?.some(a => a.error)),
+      swingCount: c.trades.filter(t => t.strategy !== 'scalper').length,
+      scalperCount: c.trades.filter(t => t.strategy === 'scalper').length,
     }));
   }, [cycles]);
 
@@ -411,6 +426,8 @@ const PipelinePage: NextPage<Props> = ({ initial }) => {
                           {c.decisions.filter(d => d === 'GO').length > 0 && <Badge tone="success">{c.decisions.filter(d => d === 'GO').length} GO</Badge>}
                           {c.decisions.filter(d => d === 'NO-GO').length > 0 && <Badge tone="destructive">{c.decisions.filter(d => d === 'NO-GO').length} NO-GO</Badge>}
                           {c.hasError && <Badge tone="destructive">Error</Badge>}
+                          {c.swingCount > 0 && <Badge tone="info">{c.swingCount} SW</Badge>}
+                          {c.scalperCount > 0 && <Badge tone="purple">{c.scalperCount} SC</Badge>}
                         </>
                       ) : (
                         <span className="text-[color:var(--muted-foreground)]/60 italic">No signals</span>
@@ -456,7 +473,12 @@ const PipelinePage: NextPage<Props> = ({ initial }) => {
                       items={selectedCycle!.trades.map((t, i) => ({
                         value: String(i),
                         label: `${t.symbol} ${t.direction}`,
-                        right: t.manager_decision ? <Badge tone={t.manager_decision === 'GO' ? 'success' : 'destructive'}>{t.manager_decision}</Badge> : undefined,
+                        right: (
+                          <div className="flex items-center gap-1">
+                            <Badge tone={t.strategy === 'scalper' ? 'purple' : 'info'}>{t.strategy === 'scalper' ? 'SC' : 'SW'}</Badge>
+                            {t.manager_decision && <Badge tone={t.manager_decision === 'GO' ? 'success' : 'destructive'}>{t.manager_decision}</Badge>}
+                          </div>
+                        ),
                       }))}
                     />
                     <span className="text-[10px] text-[color:var(--muted-foreground)] tabular">{selectedTradeIdx + 1} / {totalTradesInCycle}</span>
@@ -515,6 +537,8 @@ const PipelinePage: NextPage<Props> = ({ initial }) => {
                       <span className="text-[color:var(--muted-foreground)]">{c.tradeCount} trade{c.tradeCount !== 1 ? 's' : ''}</span>
                       {c.decisions.filter(d => d === 'GO').length > 0 && <Badge tone="success">{c.decisions.filter(d => d === 'GO').length} GO</Badge>}
                       {c.decisions.filter(d => d === 'NO-GO').length > 0 && <Badge tone="destructive">{c.decisions.filter(d => d === 'NO-GO').length} NO-GO</Badge>}
+                      {c.swingCount > 0 && <Badge tone="info">{c.swingCount} SW</Badge>}
+                      {c.scalperCount > 0 && <Badge tone="purple">{c.scalperCount} SC</Badge>}
                     </div>
                   ) : (
                     <span className="text-[10px] text-[color:var(--muted-foreground)]/60 mt-1 block">No signals</span>

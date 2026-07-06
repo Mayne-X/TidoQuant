@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import List, Optional
 
-from .config import DB_PATH
+from ..config import DB_PATH
 
 
 log = logging.getLogger("tidoquant")
@@ -195,7 +195,7 @@ def latest_equity() -> float:
         row = db.execute(
             "SELECT equity FROM equity_snapshots ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        from .config import STARTING_EQUITY
+        from ..config import STARTING_EQUITY
         return float(row["equity"]) if row else STARTING_EQUITY
 
 
@@ -222,7 +222,7 @@ def dashboard_summary() -> dict:
                 COALESCE(SUM(pnl),0) as total_pnl
             FROM trades WHERE status='closed'
         """).fetchone()
-        from .config import STARTING_EQUITY
+        from ..config import STARTING_EQUITY
         return {
             "equity": float(eq["equity"]) if eq else STARTING_EQUITY,
             "total_trades": stats["total"],
@@ -250,7 +250,7 @@ def dashboard_detail() -> dict:
             FROM trades WHERE status='closed'
         """).fetchone()
         # Find max drawdown from equity snapshots
-        from .config import STARTING_EQUITY
+        from ..config import STARTING_EQUITY
         rows = db.execute(
             "SELECT equity FROM equity_snapshots ORDER BY id ASC"
         ).fetchall()
@@ -331,33 +331,65 @@ def cycle_logs(limit: int = 20) -> List[dict]:
 def pipeline_detail(limit: int = 5) -> List[dict]:
     """Most recent pipeline runs with full agent logs and trade outcome."""
     with _db() as db:
+        # Ensure index exists for performance
+        db.execute("CREATE INDEX IF NOT EXISTS idx_agent_logs_trade_id ON agent_logs(trade_id)")
+
+        # Fetch cycles
         cycles = db.execute("""
             SELECT e.id, e.equity, e.timestamp
             FROM equity_snapshots e
             ORDER BY e.id DESC LIMIT ?
         """, (limit,)).fetchall()
+        
         result = []
+        if not cycles:
+            return result
+
+        # Fetch all trades for these cycles in one batch
+        cycle_timestamps = [c["timestamp"] for c in cycles]
+        # Using placeholder expansion for the IN clause
+        placeholders = ', '.join(['?'] * len(cycle_timestamps) * 2)
+        trades_query = f"""
+            SELECT id, symbol, direction, entry_price, exit_price,
+                   sl, tp, position_size, leverage,
+                   pnl, reason, status,
+                   mayne_score, manager_decision, manager_confidence,
+                   debate_transcript, entered_at, exited_at
+            FROM trades
+            WHERE entered_at >= datetime(?, '-15 minutes')
+              AND entered_at <= datetime(?, '+15 minutes')
+        """
+        # This is tricky with a single batch query because of the time-window logic
+        # Stick to trade-by-trade for logic correctness, but optimize the log fetch
+        
         for cycle in cycles:
             entry = dict(cycle)
-            # Trades logged within 15 min window of this cycle
-            trades = db.execute("""
-                SELECT id, symbol, direction, entry_price, exit_price,
-                       sl, tp, position_size, leverage,
-                       pnl, reason, status,
-                       mayne_score, manager_decision, manager_confidence,
-                       debate_transcript, entered_at, exited_at
-                FROM trades
-                WHERE entered_at >= datetime(?, '-15 minutes')
-                  AND entered_at <= datetime(?, '+15 minutes')
-                ORDER BY id
-            """, (cycle["timestamp"], cycle["timestamp"])).fetchall()
+            trades = db.execute(f"{trades_query} ORDER BY id", (cycle["timestamp"], cycle["timestamp"])).fetchall()
+            
+            if not trades:
+                entry["trades"] = []
+                result.append(entry)
+                continue
+
+            trade_ids = [t["id"] for t in trades]
+            # Batch fetch logs
+            log_placeholders = ', '.join(['?'] * len(trade_ids))
+            logs = db.execute(f"""
+                SELECT trade_id, agent_name, prompt, response, latency_ms, error, created_at
+                FROM agent_logs WHERE trade_id IN ({log_placeholders}) ORDER BY id
+            """, trade_ids).fetchall()
+            
+            # Map logs to trades
+            logs_by_trade = {}
+            for log in logs:
+                tid = log["trade_id"]
+                if tid not in logs_by_trade: logs_by_trade[tid] = []
+                logs_by_trade[tid].append(dict(log))
+
             entry["trades"] = []
             for t in trades:
                 td = dict(t)
-                td["agents"] = [dict(a) for a in db.execute("""
-                    SELECT agent_name, prompt, response, latency_ms, error, created_at
-                    FROM agent_logs WHERE trade_id=? ORDER BY id
-                """, (t["id"],)).fetchall()]
+                td["agents"] = logs_by_trade.get(t["id"], [])
                 entry["trades"].append(td)
             result.append(entry)
         return result

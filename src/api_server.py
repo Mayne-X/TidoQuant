@@ -1,7 +1,7 @@
 """Lightweight HTTP API server for the dashboard.
 
-Runs on port 4900 (bound to 0.0.0.0 inside Docker).
-Returns JSON from the SQLite database.
+Runs on port 4900. Returns JSON from SQLite database.
+Supports both swing and scalper strategy data.
 """
 from __future__ import annotations
 
@@ -30,31 +30,30 @@ class APIHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        self.wfile.write(json.dumps(data, default=str).encode())
 
     def do_GET(self):
         path = self.path
-        # Allow /api prefix or bare paths for compatibility
-        if path == "/api/summary" or path == "/summary":
+        if path in ("/api/summary", "/summary"):
             self._json(dashboard_summary())
-        elif path == "/api/detail" or path == "/detail":
+        elif path in ("/api/detail", "/detail"):
             self._json(dashboard_detail())
-        elif path == "/api/equity" or path == "/equity":
-            self._json(equity_history(200))
-        elif path == "/api/trades/open" or path == "/trades/open":
+        elif path in ("/api/equity", "/equity"):
+            self._json(equity_history(500))
+        elif path in ("/api/trades/open", "/trades/open"):
             self._json(get_open_trades())
-        elif path == "/api/trades/closed" or path == "/trades/closed":
-            self._json(get_closed_trades(100))
-        elif path == "/api/trades/by_symbol" or path == "/trades/by_symbol":
+        elif path in ("/api/trades/closed", "/trades/closed"):
+            self._json(get_closed_trades(200))
+        elif path in ("/api/trades/by_symbol", "/trades/by_symbol"):
             self._json(trades_by_symbol())
-        elif path == "/api/pnl/daily" or path == "/pnl/daily":
-            self._json(daily_pnl(30))
-        elif path == "/api/cycles" or path == "/cycles":
-            self._json(cycle_logs(20))
-        elif path == "/api/pipeline" or path == "/pipeline":
-            self._json(pipeline_detail(50))
-        elif path == "/api/health" or path == "/health":
-            self._json({"status": "ok", "agent_pipeline": "active"})
+        elif path in ("/api/pnl/daily", "/pnl/daily"):
+            self._json(daily_pnl(90))
+        elif path in ("/api/cycles", "/cycles"):
+            self._json(cycle_logs(100))
+        elif path in ("/api/pipeline", "/pipeline"):
+            self._json(pipeline_detail(100))
+        elif path in ("/api/health", "/health"):
+            self._json({"status": "ok", "agent_pipeline": "active", "mode": "dual-strategy"})
         else:
             self._json({"error": "not found", "path": path}, 404)
 

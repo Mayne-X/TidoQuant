@@ -104,6 +104,10 @@ export interface PipelineTrade {
   entered_at: string;
   exited_at: string | null;
   agents: AgentLog[];
+  strategy?: string;
+  limit_price?: number | null;
+  scalper_score?: number | null;
+  filter_score?: number | null;
 }
 
 export interface PipelineCycle {

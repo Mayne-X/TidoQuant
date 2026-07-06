@@ -2,14 +2,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from ..filter_chain import FilterResult
+
+if TYPE_CHECKING:
+    from ..scalper_mayne import ScalperResult
 
 
 @dataclass
 class MayneResult:
-    score: int                          # 0-75
-    passed_gate: bool                   # score >= 60
-    direction: str                      # "long" | "short"
+    score: int
+    passed_gate: bool
+    direction: str
     ote_points: int = 0
     sweep_points: int = 0
     fvg_points: int = 0
@@ -18,8 +23,8 @@ class MayneResult:
     sweep_level: Optional[float] = None
     fvg_top: Optional[float] = None
     fvg_bottom: Optional[float] = None
-    tf_scores: dict = field(default_factory=dict)   # per-timeframe OTE scores
-    detail: str = ""                    # human-readable summary for LLM context
+    tf_scores: dict = field(default_factory=dict)
+    detail: str = ""
 
 
 @dataclass
@@ -30,45 +35,48 @@ class SignalPacket:
 
     entry_price: float
     current_price: float
-    tf_candles: dict = field(default_factory=dict)        # {"1h": [...], "4h": [...], "12h": [...]}
-    sweep_candles: list = field(default_factory=list)     # 15m klines for sweep detection
-    entry_candles: list = field(default_factory=list)     # 5m klines for FVG
+    tf_candles: dict = field(default_factory=dict)
+    sweep_candles: list = field(default_factory=list)
+    entry_candles: list = field(default_factory=list)
+
+    # Scalper data
+    strategy: str = "swing"
+    scalper_result: Optional[ScalperResult] = None
+    scalper_lt_candles: dict = field(default_factory=dict)
+    scalper_htf_candles: list = field(default_factory=list)
+    scalper_sweep_candles: list = field(default_factory=list)
+    scalper_entry_candles: list = field(default_factory=list)
+    filter_result: Optional[FilterResult] = None
+    time_stop_candles: Optional[int] = None
 
     funding_rate: float = 0.0
     mark_price: float = 0.0
     open_interest: list = field(default_factory=list)
     long_short_ratio: list = field(default_factory=list)
 
-    # Populated by Researcher
     researcher_report: Optional[str] = None
     news_headlines: List[str] = field(default_factory=list)
     macro_regime: Optional[str] = None
     oi_trend: Optional[str] = None
 
-    # Populated by Sentiment
     sentiment_polarity: Optional[float] = None
     sentiment_summary: Optional[str] = None
     crowd_skew: Optional[str] = None
 
-    # Populated by Bull (R1)
     bull_thesis_r1: Optional[str] = None
     bull_score_r1: Optional[int] = None
     bull_arguments_r1: List[str] = field(default_factory=list)
 
-    # Populated by Bear (R1)
     bear_rebuttal_r1: Optional[str] = None
     bear_score_r1: Optional[int] = None
     bear_risks_r1: List[str] = field(default_factory=list)
 
-    # Populated by Bull (R2)
     bull_counter_rebuttal: Optional[str] = None
     bull_score_r2: Optional[int] = None
 
-    # Populated by Bear (R2)
     bear_final_objection: Optional[str] = None
     bear_score_r2: Optional[int] = None
 
-    # Populated by Treasury
     risk_pct: Optional[float] = None
     leverage: Optional[int] = None
     stop_loss: Optional[float] = None
@@ -76,12 +84,10 @@ class SignalPacket:
     position_size_usd: Optional[float] = None
     treasury_note: Optional[str] = None
 
-    # Populated by Manager
-    manager_decision: Optional[str] = None    # "GO" | "NO-GO"
-    manager_confidence: Optional[int] = None  # 0-100
+    manager_decision: Optional[str] = None
+    manager_confidence: Optional[int] = None
     manager_reasoning: Optional[str] = None
 
-    # Internal tracking
     trade_id: int = -1
     agent_errors: List[str] = field(default_factory=list)
     memory_briefing: Optional[str] = None
@@ -91,7 +97,6 @@ class SignalPacket:
         return self.mayne.score + (self.manager_confidence or 0)
 
     def debate_transcript(self) -> str:
-        """Collapse all agent outputs into a single string for DB logging."""
         parts = []
         if self.researcher_report:
             parts.append(f"[RESEARCHER] Macro: {self.macro_regime} | OI: {self.oi_trend}")
@@ -114,3 +119,20 @@ class SignalPacket:
             parts.append(f"[MANAGER] Decision: {self.manager_decision} | Conf: {self.manager_confidence}/100")
             parts.append(f"Reasoning: {self.manager_reasoning}")
         return "\n".join(parts)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Full serializable dict for activity logging."""
+        return {
+            "symbol": self.symbol,
+            "direction": self.direction,
+            "strategy": self.strategy,
+            "entry_price": self.entry_price,
+            "mayne_score": self.mayne.score,
+            "mayne_detail": self.mayne.detail,
+            "filter_score": self.filter_result.score if self.filter_result else None,
+            "filter_passed": self.filter_result.passed if self.filter_result else None,
+            "scalper_score": self.scalper_result.score if self.scalper_result else None,
+            "manager_decision": self.manager_decision,
+            "manager_confidence": self.manager_confidence,
+            "limit_price": self.scalper_result.limit_price if self.scalper_result else None,
+        }
