@@ -13,6 +13,17 @@ import { serverFetch, fetchDetail, fetchClosedTrades, fetchOpenTrades, fetchEqui
 import type { Detail, Trade, EquityPoint, SymbolStats, DailyPnl } from '../lib/data';
 import { fmtUSD, fmtPct, fmtNum, relTime } from '../components/cn';
 
+function fmtDuration(start: string, end?: string | null) {
+  const s = new Date(start + (start.endsWith("Z") ? "" : "Z"));
+  const e = end ? new Date(end + (end.endsWith("Z") ? "" : "Z")) : new Date();
+  const ms = e.getTime() - s.getTime();
+  if (ms < 0) return '—';
+  const hrs = Math.floor(ms / 3600000);
+  const mins = Math.floor((ms % 3600000) / 60000);
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins}m`;
+}
+
 const C = { green: '#10b981', red: '#ef4444', blue: '#6366f1', amber: '#f59e0b', purple: '#a855f7' };
 
 interface Props {
@@ -114,6 +125,11 @@ const Dashboard: NextPage<Props> = ({ initial }) => {
                   { key: 'entry', header: 'Entry', render: r => fmtUSD(r.entry_price) },
                   { key: 'sl', header: 'SL', render: r => <span className="text-destructive">{fmtUSD(r.sl || 0)}</span> },
                   { key: 'tp', header: 'TP', render: r => <span className="text-success">{fmtUSD(r.tp || 0)}</span> },
+                  { key: 'size', header: 'Size', render: r => r.position_size ? fmtUSD(r.position_size) : '—' },
+                  { key: 'lev', header: 'Lev', render: r => r.leverage ? `${r.leverage}x` : '—' },
+                  { key: 'score', header: 'Score', render: r => <span className="tabular">{r.mayne_score ?? '—'}</span> },
+                  { key: 'decision', header: 'Decision', render: r => r.manager_decision ? <span className={r.manager_decision === 'GO' ? 'text-success' : 'text-destructive'}>{r.manager_decision}</span> : '—' },
+                  { key: 'age', header: 'Age', render: r => relTime(r.entered_at) },
                 ]}
                 rows={open} getKey={r => r.id}
               />
@@ -126,11 +142,17 @@ const Dashboard: NextPage<Props> = ({ initial }) => {
           <CardContent>
             <DataTable
               columns={[
-                { key: 'id', header: '#', render: r => r.id },
-                { key: 'symbol', header: 'Symbol', render: r => <span className="font-mono">{r.symbol}</span> },
-                { key: 'pnl', header: 'PnL', render: r => <span className={(r.pnl || 0) >= 0 ? 'text-success' : 'text-destructive'}>{fmtUSD(r.pnl || 0)}</span> },
-                { key: 'reason', header: 'Reason', render: r => <span className="text-[10px] uppercase font-bold opacity-60">{r.reason}</span> },
-                { key: 'exited', header: 'Exited', render: r => relTime(r.exited_at) },
+                { key: 'symbol', header: 'Symbol', render: r => <span className="font-mono font-medium">{r.symbol}</span> },
+                { key: 'direction', header: 'Dir', render: r => <span className={r.direction === 'long' ? 'text-success' : 'text-destructive'}>{r.direction}</span> },
+                { key: 'entry', header: 'Entry', render: r => <span className="tabular">{fmtUSD(r.entry_price)}</span> },
+                { key: 'exit', header: 'Exit', render: r => <span className="tabular">{r.exit_price ? fmtUSD(r.exit_price) : '—'}</span> },
+                { key: 'size', header: 'Size', render: r => r.position_size ? fmtUSD(r.position_size) : '—' },
+                { key: 'lev', header: 'Lev', render: r => r.leverage ? `${r.leverage}x` : '—' },
+                { key: 'sl', header: 'SL', render: r => r.sl ? <span className="tabular text-destructive">{fmtUSD(r.sl)}</span> : '—' },
+                { key: 'tp', header: 'TP', render: r => r.tp ? <span className="tabular text-success">{fmtUSD(r.tp)}</span> : '—' },
+                { key: 'pnl', header: 'PnL', render: r => <span className={(r.pnl || 0) >= 0 ? 'text-success tabular' : 'text-destructive tabular'}>{fmtUSD(r.pnl || 0)}</span> },
+                { key: 'duration', header: 'Dur', render: r => fmtDuration(r.entered_at, r.exited_at) },
+                { key: 'reason', header: 'Why', render: r => <span className="text-[10px] uppercase font-bold opacity-60">{r.reason || '—'}</span> },
               ]}
               rows={closedRev} getKey={r => r.id}
             />

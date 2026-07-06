@@ -10,7 +10,7 @@ from typing import Optional
 
 import requests
 
-from ..config import OLLAMA_BASE_URL, GEMMA4_MODEL, NUM_CTX, OLLAMA_TIMEOUT, OLLAMA_TEMPERATURE
+from ..config import OLLAMA_BASE_URL, GEMMA4_MODEL, NUM_CTX, OLLAMA_TIMEOUT, OLLAMA_TEMPERATURE, OLLAMA_MAX_TOKENS
 
 
 log = logging.getLogger("tidoquant")
@@ -38,7 +38,7 @@ class OllamaClient:
         system: str,
         user: str,
         temperature: float = OLLAMA_TEMPERATURE,
-        max_tokens: int = 1024,
+        max_tokens: int = OLLAMA_MAX_TOKENS,
         retry: bool = True,  # Added retry parameter
     ) -> dict:
         """Send a chat request. Returns parsed JSON dict."""

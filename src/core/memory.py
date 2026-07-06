@@ -85,33 +85,46 @@ def build_performance_briefing() -> str:
         if pnl > 0:
             score_stats[key]["wins"] += 1
 
+    # Strategy analysis
+    swing_trades = [t for t in trades if t.get("strategy", "swing") != "scalper"]
+    scalper_trades = [t for t in trades if t.get("strategy") == "scalper"]
+
     # Format into markdown
     lines = []
     lines.append("### CRITICAL MEMORY & PERFORMANCE BRIEFING")
     lines.append(f"- **Overall Performance**: {win_rate:.1f}% Win Rate ({wins}W / {losses}L over {total} trades)")
     
     if streak_count >= 2:
-        streak_emoji = "🔥" if streak_type == "winning" else "⚠️"
-        lines.append(f"- **Current Streak**: {streak_emoji} On a {streak_count}-trade {streak_type} streak! "
+        marker = "🔥" if streak_type == "winning" else "⚠️"
+        lines.append(f"- **Current Streak**: {marker} On a {streak_count}-trade {streak_type} streak! "
                      f"{'Maximize opportunities' if streak_type == 'winning' else 'Exercise extreme caution and reduce position sizes'}.")
+
+    # Strategy breakdown
+    if scalper_trades:
+        s_total = len(scalper_trades)
+        s_wins = sum(1 for t in scalper_trades if (t["pnl"] or 0) > 0)
+        s_wr = (s_wins / s_total * 100) if s_total > 0 else 0.0
+        lines.append(f"\n**Strategy Breakdown**:")
+        lines.append(f"  * SWING: {len(swing_trades)} trades")
+        lines.append(f"  * SCALPER: {s_total} trades ({s_wr:.1f}% WR, {s_wins}W)")
 
     lines.append("\n**Asset-Specific Performance**:")
     for sym, s in sorted(asset_stats.items()):
         s_wr = (s["wins"] / s["total"] * 100) if s["total"] > 0 else 0.0
-        caution = " (⚠️ CAUTION: High failure rate, analyze with caution)" if s_wr < 40.0 and s["total"] >= 2 else ""
-        lines.append(f"  * {sym}: {s_wr:.1f}% Win Rate ({s['wins']}W/{s['losses']}L, PnL: ${s['pnl']:.2f}){caution}")
+        caution = " (CAUTION: High failure rate)" if s_wr < 40.0 and s["total"] >= 2 else ""
+        lines.append(f"  * {sym}: {s_wr:.1f}% WR ({s['wins']}W/{s['losses']}L, PnL: ${s['pnl']:.2f}){caution}")
 
-    lines.append("\n**Directional Bias Performance**:")
+    lines.append("\n**Directional Bias**:")
     for d, s in dir_stats.items():
         if s["total"] > 0:
             s_wr = (s["wins"] / s["total"] * 100)
-            lines.append(f"  * {d.upper()} trades: {s_wr:.1f}% Win Rate ({s['wins']}W/{s['losses']}L)")
+            lines.append(f"  * {d.upper()}: {s_wr:.1f}% WR ({s['wins']}W/{s['losses']}L)")
 
     lines.append("\n**Confluence Score Performance**:")
     for k, s in score_stats.items():
         if s["total"] > 0:
             s_wr = (s["wins"] / s["total"] * 100)
-            range_str = "60-65 (low confluence)" if k == "low" else ">= 66 (high confluence)"
-            lines.append(f"  * Mayne Score {range_str}: {s_wr:.1f}% Win Rate ({s['wins']}W/{s['total']} total)")
+            range_str = "60-65 (low)" if k == "low" else "66+ (high)"
+            lines.append(f"  * Mayne {range_str}: {s_wr:.1f}% WR ({s['wins']}W/{s['total']}T)")
 
     return "\n".join(lines)

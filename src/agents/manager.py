@@ -10,40 +10,52 @@ class ManagerAgent(BaseAgent):
 
     def system_prompt(self) -> str:
         return (
-            "You are the Manager Agent — the FINAL DECISION-MAKER for TidoQuant.\n\n"
-            "You receive complete reports from: Researcher, Sentiment, Bull (R1+R2), "
-            "Bear (R1+R2), and Treasury.\n\n"
+            "You are the Manager Agent — the FINAL DECISION-MAKER for TidoQuant.\n"
+            "You oversee a dual-strategy system: SWING (1h/4h/12h positional) "
+            "and SCALPER (1m/5m/15m/30m micro).\n\n"
+            "You receive complete reports from all 8 agents and the performance memory briefing.\n\n"
             "Your job:\n"
-            "1. Fact-check each agent's claims against the raw data\n"
-            "2. Weigh Bull vs Bear arguments — whose reasoning is stronger?\n"
-            "3. Check Treasury's risk calculation — does it respect the bracket?\n"
-            "4. Make FINAL DECISION\n\n"
+            "1. Confirm the strategy context (swing vs scalper) and evaluate whether the "
+            "technical setup matches the strategy's timeframe\n"
+            "2. Fact-check each agent's claims against the raw data provided\n"
+            "3. Weigh Bull vs Bear arguments — whose reasoning is more specific and evidence-based?\n"
+            "4. Check Treasury's risk calculation — does it respect the strategy's risk brackets?\n"
+            "5. For scalpers: verify that the filter chain passed, scalper Mayne score is adequate, "
+            "and the limit price is reasonable\n"
+            "6. Make FINAL DECISION\n\n"
             "Decision logic:\n"
-            "- GO: The technical structure is sound, the Bull made stronger arguments,\n"
-            "  and the Bear's risks are manageable with the proposed SL.\n"
-            "- NO-GO: The Bear raised valid structural concerns that weren't refuted,\n"
-            "  or the risk/reward doesn't justify the trade.\n"
-            "- Consider performance_briefing: if streak is losing or asset has high loss rate, be significantly more cautious.\n\n"
-            "IMPORTANT: Return ONLY a valid JSON object. Do not include any introductory or concluding text. Do not use Markdown code blocks (e.g., no ```json). Your response must start with { and end with }.\n\n"
+            "- GO: Technical structure is sound, Bull made stronger arguments, "
+            "Bear's risks are manageable with the proposed SL, Treasury sizing is appropriate\n"
+            "- NO-GO: Bear raised valid structural concerns not refuted, R:R doesn't justify, "
+            "or performance_briefing shows high loss rate on this asset\n"
+            "- Consider performance_briefing: losing streak → more cautious; "
+            "asset with >60% loss rate → significantly reduce confidence\n\n"
+            "IMPORTANT: Return ONLY a valid JSON object. No markdown, no code fences. Start with { end with }.\n\n"
             "OUTPUT JSON:\n"
             '{\n'
             '  "decision": "GO" | "NO-GO",\n'
             '  "confidence": 0-100,\n'
-            '  "reasoning": "step-by-step analysis of each agent output",\n'
+            '  "reasoning": "step-by-step analysis citing specific agent outputs and numbers",\n'
             '  "rejected_arguments": ["arguments you dismissed and why"],\n'
-            '  "override_note": "any parameter overrides or warnings"\n'
+            '  "override_note": "any parameter overrides or warnings for the execution engine"\n'
             '}'
         )
 
     def _packet_input(self, packet: SignalPacket) -> dict:
+        entry = packet.scalper_result.limit_price if (packet.strategy == "scalper" and packet.scalper_result and packet.scalper_result.limit_price) else packet.entry_price
+
         data = {
             "symbol": packet.symbol,
             "direction": packet.direction,
-            "entry_price": packet.entry_price,
+            "strategy": packet.strategy_label,
+            "entry_price": entry,
             "current_price": packet.current_price,
+            "price_slippage_pct": round((packet.current_price / entry - 1) * 100, 2) if entry else 0,
             "mayne": {
                 "score": packet.mayne.score,
+                "passed_gate": packet.mayne.passed_gate,
                 "detail": packet.mayne.detail,
+                "tf_scores": packet.mayne.tf_scores,
             },
             "researcher": {
                 "report": packet.researcher_report,
@@ -78,6 +90,11 @@ class ManagerAgent(BaseAgent):
                 "note": packet.treasury_note,
             },
         }
+        if packet.strategy == "scalper":
+            data["filter"] = packet.filter_context
+            data["scalper"] = packet.scalper_context
+            if packet.time_stop_candles:
+                data["time_stop_candles"] = packet.time_stop_candles
         if packet.memory_briefing:
             data["performance_briefing"] = packet.memory_briefing
         return data

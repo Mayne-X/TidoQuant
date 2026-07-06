@@ -25,30 +25,36 @@ class BullAgent(BaseAgent):
     def system_prompt(self) -> str:
         if self._round == 1:
             return (
-                "You are the Bull Agent in a crypto trading system. "
-                "Your job: argue why the price of {symbol} will INCREASE "
-                "(for a long) or DECREASE (for a short).\n\n"
-                "You have access to:\n"
-                "- Trader Mayne technical structure (OTE zone, sweep, FVG)\n"
-                "- Macro research context\n"
-                "- Social sentiment data\n\n"
-                "Build the strongest possible thesis. Be specific about levels.\n\n"
+                "You are the Bull Agent in a dual-strategy crypto trading system. "
+                "The strategy is indicated in your input data — SWING (1h/4h/12h positional) "
+                "or SCALPER (1m/5m/15m/30m micro).\n\n"
+                "Your job: argue why the price will MOVE IN THE DIRECTION OF THE TRADE.\n\n"
+                "Build the strongest possible thesis using:\n"
+                "- Mayne technical structure (OTE zone, sweep, FVG, individual TF scores)\n"
+                "- For scalpers: filter chain results, micro sweep/FVG levels, limit price\n"
+                "- Macro research and market regime context\n"
+                "- Social sentiment and crowd positioning\n\n"
+                "Be specific about price levels. Reference actual numbers from the data.\n\n"
                 "OUTPUT JSON:\n"
                 '{\n'
-                '  "thesis": "one sentence core thesis",\n'
-                '  "score": 0-10 (conviction), \n'
-                '  "arguments": ["arg1 with specific level", "arg2", "arg3"],\n'
-                '  "key_levels": ["support1", "resistance1"]\n'
+                '  "thesis": "one sentence core thesis explaining WHY price will move in our direction",\n'
+                '  "score": 0-10 (conviction level, 10 = highest conviction), \n'
+                '  "arguments": ["arg1 with specific price level", "arg2", "arg3"],\n'
+                '  "key_levels": ["key support or resistance level for this trade"]\n'
                 '}'
             )
         # Round 2
         return (
-            "You are the Bull Agent (Round 2). The Bear Agent has "
-            "challenged your thesis. You must DEFEND your position "
-            "and counter the Bear's arguments.\n\n"
+            "You are the Bull Agent (Round 2) in a dual-strategy crypto trading system. "
+            "The Bear Agent has challenged your Round 1 thesis. "
+            "You must DEFEND your position and counter the Bear's arguments.\n\n"
+            "Consider:\n"
+            "- Did the Bear miss any structural advantage?\n"
+            "- Is the Bear's risk overstated given the SL placement?\n"
+            "- Are there new levels or data that support your case?\n\n"
             "OUTPUT JSON:\n"
             '{\n'
-            '  "counter_rebuttal": "your defense against the Bear\'s main point",\n'
+            '  "counter_rebuttal": "your defense against the Bear\'s main objection, referencing specific levels",\n'
             '  "score": 0-10 (updated conviction),\n'
             '  "concessions": ["any valid points the Bear made that you acknowledge"]\n'
             '}'
@@ -58,25 +64,33 @@ class BullAgent(BaseAgent):
         base = {
             "symbol": packet.symbol,
             "direction": packet.direction,
+            "strategy": packet.strategy_label,
             "entry_price": packet.entry_price,
             "current_price": packet.current_price,
+            "price_vs_entry_pct": round((packet.current_price / packet.entry_price - 1) * 100, 2),
         }
         if self._round == 1:
             base.update({
                 "mayne": {
                     "score": packet.mayne.score,
+                    "passed": packet.mayne.passed_gate,
                     "ote_points": packet.mayne.ote_points,
                     "sweep_points": packet.mayne.sweep_points,
                     "fvg_points": packet.mayne.fvg_points,
                     "detail": packet.mayne.detail,
+                    "tf_scores": packet.mayne.tf_scores,
                 },
-                "researcher": packet.researcher_report,
+                "researcher_report": packet.researcher_report,
+                "macro_regime": packet.macro_regime,
                 "sentiment": {
                     "polarity": packet.sentiment_polarity,
                     "summary": packet.sentiment_summary,
                     "crowd_skew": packet.crowd_skew,
                 },
             })
+            if packet.strategy == "scalper":
+                base["filter"] = packet.filter_context
+                base["scalper"] = packet.scalper_context
         else:
             base.update({
                 "bear_rebuttal": packet.bear_rebuttal_r1,

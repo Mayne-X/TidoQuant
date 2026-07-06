@@ -88,9 +88,10 @@ MAKER_FEE: float = 0.0002
 # --- Ollama ---
 OLLAMA_BASE_URL: str = _os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 GEMMA4_MODEL: str = "qwen2.5:7b"
-NUM_CTX: int = 131072
+NUM_CTX: int = 4096
 OLLAMA_TIMEOUT: int = 180
 OLLAMA_TEMPERATURE: float = 0.3
+OLLAMA_MAX_TOKENS: int = 2048
 
 # --- SQLite (ops: trades, agents, snapshots) ---
 DB_PATH: str = "journal/tidoquant.db"

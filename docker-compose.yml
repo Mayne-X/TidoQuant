@@ -29,6 +29,9 @@ services:
       - ./reports:/app/reports
       - ./skills:/app/skills
     environment:
+      # Ollama runs on host — GPU acceleration must be configured there:
+      # Windows AMD: set OLLAMA_USE_DML=1 before starting Ollama
+      # Linux AMD (ROCm): OLLAMA_USE_GPU=1, HSA_OVERRIDE_GFX_VERSION=11.0.0
       - OLLAMA_BASE_URL=http://host.docker.internal:11434
       - TIMESCALE_URL=postgresql://tidoquant:tidoquant@timescaledb:5432/tidoquant
     extra_hosts:

@@ -96,6 +96,37 @@ class SignalPacket:
     def total_confidence(self) -> int:
         return self.mayne.score + (self.manager_confidence or 0)
 
+    @property
+    def strategy_label(self) -> str:
+        return "SCALPER (1m/5m/15m/30m)" if self.strategy == "scalper" else "SWING (1h/4h/12h)"
+
+    @property
+    def filter_context(self) -> dict:
+        if not self.filter_result:
+            return {}
+        return {
+            "filter_score": self.filter_result.score,
+            "filter_passed": self.filter_result.passed,
+            "filter_details": self.filter_result.details,
+            "reject_reason": self.filter_result.reject_reason,
+        }
+
+    @property
+    def scalper_context(self) -> dict:
+        if not self.scalper_result:
+            return {}
+        return {
+            "scalper_score": self.scalper_result.score,
+            "scalper_passed": self.scalper_result.passed_gate,
+            "scalper_detail": self.scalper_result.detail,
+            "limit_price": self.scalper_result.limit_price,
+            "htf_bias_aligned": self.scalper_result.htf_bias_aligned,
+            "sweep_detected": self.scalper_result.sweep_detected,
+            "fvg_detected": self.scalper_result.fvg_detected,
+            "micro_sweep_level": self.scalper_result.micro_sweep_level,
+            "tf_scores": self.scalper_result.tf_scores,
+        }
+
     def debate_transcript(self) -> str:
         parts = []
         if self.researcher_report:
