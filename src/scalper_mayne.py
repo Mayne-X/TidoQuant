@@ -45,6 +45,11 @@ def score_scalper_mayne(
     tf_scores: Dict[str, int] = {}
     details: List[str] = []
     sweep_level = fvg_top = fvg_bottom = None
+    sweep_detected = False
+    fvg_detected = False
+    ote_aligned = False
+    sweep_pts = 0
+    fvg_pts = 0
 
     # ─── 0. HTF Bias Check (1h) ───
     bias_aligned = True
