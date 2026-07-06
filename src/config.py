@@ -12,6 +12,11 @@ PAIRS: Tuple[str, ...] = (
     "SOLUSDT",
     "BNBUSDT",
     "XRPUSDT",
+    "SUIUSDT",
+    "TRXUSDT",
+    "HYPEUSDT",
+    "XLMUSDT",
+    "ZECUSDT",
 )
 
 SCAN_INTERVAL_SECONDS: int = 15 * 60
